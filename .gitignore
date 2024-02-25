@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+pms
+tmp/
+test_data
