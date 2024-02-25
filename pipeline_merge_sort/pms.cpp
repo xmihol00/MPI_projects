@@ -348,6 +348,12 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank); // get the process ID
     MPI_Comm_size(MPI_COMM_WORLD, &size); // get the number of processes
 
+    if (size < 2) // at least two processes are needed
+    {
+        cerr << "Error: At least two processes are needed to perform the sorting." << endl;
+        MPI_Abort(MPI_COMM_WORLD, 1); // not enough processes
+    }
+
     PipelineMergeSort::SortDirection direction = PipelineMergeSort::ASCENDING;
     if (argc > 1) // parse the command line arguments (optional)
     {
