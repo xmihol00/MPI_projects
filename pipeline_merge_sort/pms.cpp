@@ -24,20 +24,28 @@
 
 using namespace std;
 
+enum SortDirection
+{
+    ASCENDING,
+    DESCENDING
+};
+
+enum CommunicationStyles
+{
+    QUEUE,
+    BATCH_SYNC,
+    BATCH_ASYNC
+};
+
 /**
  * @brief Sorts a sequence of 2^(N-1) values using the pipeline merge sort algorithm with N processes.
  *        The input values are read from STDIN and the sorted sequence is written to STDOUT.
  *        Only sequences of a length equal to 2^(N-1) are allowed for N processes.
  */
+template <CommunicationStyles communication_style = CommunicationStyles::BATCH_SYNC>
 class PipelineMergeSort
 {
     public:
-        enum SortDirection
-        {
-            ASCENDING,
-            DESCENDING
-        };
-
         /**
          * @brief Construct a new Pipeline Merge Sort object.
          * @param rank The process ID, must be obtained by a call to MPI_Comm_rank.
@@ -95,7 +103,8 @@ class PipelineMergeSort
                                // writes them to STDOUT
 };
 
-PipelineMergeSort::PipelineMergeSort(int rank, int size, MPI_Comm top_comm, MPI_Comm bot_comm) : 
+template<CommunicationStyles communication_style>
+PipelineMergeSort<communication_style>::PipelineMergeSort(int rank, int size, MPI_Comm top_comm, MPI_Comm bot_comm) : 
     RANK{rank}, SIZE{size}, TOP_COMM{top_comm}, BOT_COMM{bot_comm}, 
     INPUT_SIZE{1U << (rank - 1)},        // 2^(rank-1)
     OUTPUT_SIZE{1U << rank},             // 2^rank
@@ -126,7 +135,8 @@ PipelineMergeSort::PipelineMergeSort(int rank, int size, MPI_Comm top_comm, MPI_
     }
 }
 
-PipelineMergeSort::~PipelineMergeSort()
+template<CommunicationStyles communication_style>
+PipelineMergeSort<communication_style>::~PipelineMergeSort()
 {
     // clean up allocated memory
 
@@ -141,7 +151,8 @@ PipelineMergeSort::~PipelineMergeSort()
     }
 }
 
-void PipelineMergeSort::check_top_status()
+template<CommunicationStyles communication_style>
+void PipelineMergeSort<communication_style>::check_top_status()
 {
     if (_top_status.MPI_ERROR != MPI_SUCCESS)
     {
@@ -158,7 +169,8 @@ void PipelineMergeSort::check_top_status()
     }
 }
 
-void PipelineMergeSort::check_bot_status()
+template<CommunicationStyles communication_style>
+void PipelineMergeSort<communication_style>::check_bot_status()
 {
     if (_bot_status.MPI_ERROR != MPI_SUCCESS)
     {
@@ -175,7 +187,8 @@ void PipelineMergeSort::check_bot_status()
     }
 }
 
-void PipelineMergeSort::sort(SortDirection direction)
+template<CommunicationStyles communication_style>
+void PipelineMergeSort<communication_style>::sort(SortDirection direction)
 {
     // decide the direction of the sorting in advance to be able to use compile-time templates for optimization
     if (direction == ASCENDING)
@@ -210,7 +223,8 @@ void PipelineMergeSort::sort(SortDirection direction)
     }
 }
 
-void PipelineMergeSort::input_process()
+template<CommunicationStyles communication_style>
+void PipelineMergeSort<communication_style>::input_process()
 {
     union
     {
@@ -246,8 +260,9 @@ void PipelineMergeSort::input_process()
     }
 }
 
-template <PipelineMergeSort::SortDirection direction>
-void PipelineMergeSort::merge_process()
+template<CommunicationStyles communication_style> 
+template<SortDirection direction>
+void PipelineMergeSort<communication_style>::merge_process()
 {
     uint8_t value;
     for (uint32_t n = 0; n < ITERATIONS; n++)
@@ -280,6 +295,9 @@ void PipelineMergeSort::merge_process()
             }
 
             // avoid sending values one after another, it is not efficient to send them at once as there is a lot more overhead caused by the MPI communication
+            // for smaller batches (processes with lower ranks) the communication will be buffered, for larger batches (processes with higher ranks) the send
+            // will be blocking, but the communication will be more efficient, as the initiation latency of the communication will be small in comparison to the
+            // time needed to send the whole batch
             MPI_Send(_output_buffer, OUTPUT_SIZE, MPI_BYTE, RANK + 1, 0, TOP_COMM); // send the merge-sorted batch to the next process
         }
         else // write to bottom channel/stream, here it is not necessary to write values one after another, so the next process can start sorting
@@ -297,6 +315,8 @@ void PipelineMergeSort::merge_process()
 
                 // send the value from the bottom channel/stream, now it is smaller (ASCENDING sort) or greater (DESCENDING sort) 
                 // than the value from the top channel/stream
+                // this communication will be always buffered, meaning that the function returns before the receiving process has received the value,
+                // which means that computation can be partly overlapped with the communication
                 MPI_Send(&value, 1, MPI_BYTE, RANK + 1, 0, BOT_COMM);
             }
 
@@ -310,8 +330,9 @@ void PipelineMergeSort::merge_process()
     }
 }
 
-template <PipelineMergeSort::SortDirection direction>
-void PipelineMergeSort::output_process()
+template<CommunicationStyles communication_style> 
+template<SortDirection direction>
+void PipelineMergeSort<communication_style>::output_process()
 {
     uint8_t value;
     MPI_Recv(_input_buffer, INPUT_SIZE, MPI_BYTE, RANK - 1, 0, TOP_COMM, &_top_status); // wait for half of the values to be received
@@ -354,13 +375,13 @@ int main(int argc, char *argv[])
         MPI_Abort(MPI_COMM_WORLD, 1); // not enough processes
     }
 
-    PipelineMergeSort::SortDirection direction = PipelineMergeSort::ASCENDING;
+    SortDirection direction = SortDirection::ASCENDING;
     if (argc > 1) // parse the command line arguments (optional)
     {
         string arg = argv[1];
         if (arg == "-d")
         {
-            direction = PipelineMergeSort::DESCENDING;
+            direction = SortDirection::DESCENDING;
         }
         
         if (rank == 0 && ((arg != "-a" && arg != "-d") || argc > 2)) // valid arguments are '-a' for ASCENDING sort and '-d' for DESCENDING sort
@@ -377,7 +398,7 @@ int main(int argc, char *argv[])
     // simulate the bottom channel with another separate communicator, the bottom channel will be always used to send values one by one
     MPI_Comm_dup(MPI_COMM_WORLD, &bot_comm);
 
-    PipelineMergeSort pms(rank, size, top_comm, bot_comm); // initialize the pipeline sorter
+    PipelineMergeSort<> pms(rank, size, top_comm, bot_comm); // initialize the pipeline sorter
     pms.sort(direction);                                   // perform the sorting
 
     // clean up
