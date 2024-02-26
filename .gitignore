@@ -34,3 +34,5 @@
 pms
 tmp/
 test_data
+performance/
+nums.bin

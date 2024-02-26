@@ -1,16 +1,18 @@
 import sys
 
 direction = True
-if len(sys.argv) > 1:
-    if sys.argv[1] == '-d':
-        direction = False
+if sys.argv[1] == '-d':
+    direction = False
+size = int(sys.argv[2])
 
 current_max = 0
 current_min = 255
 sorted = True
 
+actual_size = 0
 if direction:
     for line in sys.stdin:
+        actual_size += 1
         print(line, end='')
         line = line.strip()
         value = int(line)
@@ -21,6 +23,7 @@ if direction:
             sorted = False
 else:
     for line in sys.stdin:
+        actual_size += 1
         print(line, end='')
         line = line.strip()
         value = int(line)
@@ -30,8 +33,13 @@ else:
             print('Error: input is not sorted', file=sys.stderr)
             sorted = False
 
-if sorted:
-    print('Input is sorted', file=sys.stderr)
+if actual_size == size:
+    print('\033[92mSizes match\033[0m', file=sys.stderr)
 else:
-    print('Input is not sorted', file=sys.stderr)
+    print('\033[91mSizes do not match\033[0m', f'actual={actual_size}, expected={size}', file=sys.stderr)
+
+if sorted:
+    print('\033[92mInput is sorted\033[0m', file=sys.stderr)
+else:
+    print('\033[91mInput is not sorted\033[0m', file=sys.stderr)
         

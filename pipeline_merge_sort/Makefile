@@ -3,13 +3,20 @@ CURRENT_DIR = $(shell pwd)
 PROJECT_DIR = $(MAKEFILE_DIR:$(CURRENT_DIR)/%=%)
 
 CC = mpic++
-CFLAGS = -Wall -Wextra -std=c++17 -g
+CFLAGS = -Wall -Wextra -std=c++17 -O3 -Wno-cast-function-type
 CPP_SRC = $(wildcard $(PROJECT_DIR)/*.cpp)
 
-ifndef N  # by default run 3 processes, i.e. 2^2=4 values
-    N := 3
+ifndef D
+	D := -a
 endif
-M = $(shell (echo "(2^($N-1))" | bc -l | xargs printf "%1.0f")) # compute 2^(N-1)
+ifndef C
+	C := -b
+endif
+ifndef M  # by default run 4 processes, i.e. 2^3=8 values
+    M := 8
+endif
+Q=$(shell (echo "(l($M)/l(2))+1" | bc -l))
+N=$(shell (python3 -c "from math import ceil; print(ceil($Q), end='')"))
 
 .PHONY: all run clean
 
@@ -17,7 +24,10 @@ all: $(PROJECT_DIR)/pms.cpp
 	$(CC) $(CFLAGS) $(CPP_SRC) -o $(PROJECT_DIR)/pms
 
 run: all
-	dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D | python3 $(PROJECT_DIR)/sorted.py $D
+	head -c $M $(PROJECT_DIR)/nums.bin | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C | python3 $(PROJECT_DIR)/sorted.py $D $M
+
+nums:
+	$(shell (python3 -c "import numpy as np; np.random.randint(0, 256, 2**$N, dtype=np.uint8).tofile('nums.bin')"))
 
 # usage: 'N' stands for number of processes and 'D' stands for direction ('-a' for ascending, '-d' for descending) 
 #        make
