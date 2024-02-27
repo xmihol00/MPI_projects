@@ -10,6 +10,7 @@ if len(sys.argv) > 1:
 
 directions = ["Ascending", "Descending"]
 communication = ["Batch", "Single"]
+max = 16
 
 for log in [False, True]:
     plt.figure(figsize=(15, 10))
@@ -50,8 +51,8 @@ for log in [False, True]:
     for direction in directions:
         for comm in communication:
             df = pd.read_csv(f"{directory}/{direction}_{comm}.csv".lower(), header=None)
-            processes = df.iloc[:, 0][:19]
-            times = df.iloc[:, 1][:19]
+            processes = df.iloc[:, 0][:max]
+            times = df.iloc[:, 1][:max]
             times_avg.append(times)
             plt.plot(processes, times, label=f"{direction} - {comm}", marker='o')
 
@@ -72,5 +73,5 @@ for log in [False, True]:
     plt.xlabel("Number of processes")
     plt.title("Performance of pipeline merge sort")
     plt.tight_layout()
-    plt.savefig(f"{directory}/performance_plot_{'log' if log else 'lin'}_max20.png", dpi=400)
+    plt.savefig(f"{directory}/performance_plot_{'log' if log else 'lin'}_max{max + 1}.png", dpi=400)
     plt.show()

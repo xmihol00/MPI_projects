@@ -10,9 +10,11 @@
 // compile with: mpic++ -std=c++17 pms.cpp -o pms
 // run with:     mpirun -np <number of processes> ./pms [-a|-d]
 // test with:    https://github.com/xmihol00/MPI_projects/blob/main/pipeline_merge_sort/test.sh or manually with the following commands:
+//               M=123456  # choose a number of input values
 //               D=""      # choose a sort direction, ASCENDING is by default
-//               N=8       # choose a number of processes larger than 1
-//               M=$((2**($N-1)))
+//               C=""      # choose a communication style, BATCH is by default
+//               N=$(python3 -c "from math import ceil, log2; print(ceil(log2($M)+1), end='')")
+//               if [ "$D" = "" ]; then D="-a"; else D="-d"; fi
 //               if [ "$D" = "-d" ]; then R="-r"; else R=""; fi
 //               dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N ./pms $D | sort -nc $R && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m"
 // =======================================================================================================================================================
@@ -35,7 +37,7 @@
 
 using namespace std;
 
-#if 1 
+#if 0
     #define INFO_PRINT(rank, message) if (rank == 0) { cerr << "Info: " << message << endl; }
 #else
     #define INFO_PRINT(rank, message) 
