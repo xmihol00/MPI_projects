@@ -24,10 +24,7 @@ all: $(PROJECT_DIR)/pms.cpp
 	$(CC) $(CFLAGS) $(CPP_SRC) -o $(PROJECT_DIR)/pms
 
 run: all
-	head -c $M $(PROJECT_DIR)/nums.bin | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C | python3 $(PROJECT_DIR)/sorted.py $D $M
-
-nums:
-	$(shell (python3 -c "import numpy as np; np.random.randint(0, 256, 2**$N, dtype=np.uint8).tofile('nums.bin')"))
+	dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C | python3 $(PROJECT_DIR)/sorted.py $D $M
 
 # usage: 'N' stands for number of processes and 'D' stands for direction ('-a' for ascending, '-d' for descending) 
 #        make

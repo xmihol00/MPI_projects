@@ -1,12 +1,19 @@
+ml matplotlib/3.5.2-foss-2022a
+ml OpenMPI/4.1.4-GCC-11.3.0
+mpic++ -O3 -o pms ../pms.cpp
+
 now=$(date +"%Y-%m-%d_%H-%M-%S")
 echo "$now" > failed.log
 failed=0
 for D in -a -d; do
     for C in -b -s; do
+        python3 -c "import numpy as np; np.random.randint(0, 256, 2**32, dtype=np.uint8).tofile('nums.bin')"
         if [ "$D" = "-a" ]; then
             title="Ascending"
+            R=""
         else
             title="Descending"
+            R="-r"
         fi
         if [ "$C" = "-b" ]; then
             title="$title Batch"
@@ -14,11 +21,11 @@ for D in -a -d; do
             title="$title Bingle"
         fi
         echo -e "testing: \e[34m$title\e[0m" | tee -a failed.log
-        for M in $(python -c "import numpy as np; samples = np.random.lognormal(mean=np.log(2**8), sigma=6, size=10000).astype(np.int64); print(' '.join(map(str, samples[(samples <= 2**20) & (samples >= 2)][:50])))"); do
+        for M in $(python3 -c "import numpy as np; samples = np.random.lognormal(mean=np.log(2**8), sigma=6, size=10000).astype(np.int64); print(' '.join(map(str, samples[(samples <= 2**32) & (samples >= 2)][:50])))"); do
             Q=$(echo "(l($M)/l(2))+1" | bc -l)
             N=$(python3 -c "from math import ceil; print(ceil($Q), end='')")
             echo "N=$N, M=$M, D=$D, C=$C"
-            dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N pms $D $C | python3 sorted.py $D $M >/dev/null
+            head -c $M nums.bin | mpirun -np $N pms $D $C | python3 ../sorted.py $D $M >/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "\e[32mSORTED\e[0m"
             else
@@ -46,10 +53,10 @@ for D in -a -d; do
             title="$title Bingle"
         fi
         echo -e "testing: \e[34m$title\e[0m" | tee -a failed.log
-        for N in {2..20}; do
+        for N in {2..30}; do
             M=$((2**($N-1)))
             echo "N=$N, M=$M, D=$D, C=$C"
-            dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N pms $D $C | python3 sorted.py $D $M >/dev/null
+            head -c $M nums.bin | mpirun -np $N pms $D $C | python3 ../sorted.py $D $M >/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "\e[32mSORTED\e[0m"
             else

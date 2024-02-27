@@ -33,13 +33,17 @@ else:
             print('Error: input is not sorted', file=sys.stderr)
             sorted = False
 
+exit_code = 0
 if actual_size == size:
     print('\033[92mSizes match\033[0m', file=sys.stderr)
 else:
     print('\033[91mSizes do not match\033[0m', f'actual={actual_size}, expected={size}', file=sys.stderr)
+    exit_code = 1
 
 if sorted:
     print('\033[92mInput is sorted\033[0m', file=sys.stderr)
 else:
     print('\033[91mInput is not sorted\033[0m', file=sys.stderr)
-        
+    exit_code = 1
+
+exit(exit_code)
