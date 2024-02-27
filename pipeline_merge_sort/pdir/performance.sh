@@ -1,4 +1,9 @@
+ml matplotlib/3.5.2-foss-2022a
+ml OpenMPI/4.1.4-GCC-11.3.0
+mpic++ -O3 -o pms ../pms.cpp
+
 mkdir -p performance
+python3 -c "import numpy as np; np.random.randint(0, 256, 2**32, dtype=np.uint8).tofile('nums.bin')"
 
 for D in -a -d; do
     for C in -b -s; do
@@ -20,7 +25,7 @@ for D in -a -d; do
             M=$((2**($N-1)))
             echo "N=$N, M=$M, D=$D, C=$C"
             start_time=$(date +%s.%N)
-            head -c $M ../nums.bin | mpirun --oversubscribe -np $N pms $D $C >/dev/null
+            head -c $M nums.bin | mpirun --oversubscribe -np $N pms $D $C >/dev/null
             end_time=$(date +%s.%N)
             diff=$(echo "scale=3; $end_time - $start_time" | bc)
             echo "$N, $diff" >> performance/$file_name

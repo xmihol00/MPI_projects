@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 directions = ["Ascending", "Descending"]
 communication = ["Batch", "Single"]
 
-plt.figure(figsize=(10, 5))
+plt.figure(figsize=(15, 10))
 
 for direction in directions:
     for comm in communication:
@@ -14,6 +14,11 @@ for direction in directions:
         times = df.iloc[:, 1]
         plt.plot(processes, times, label=f"{direction} - {comm}", marker='o')
 
+N = np.arange(2, len(processes) + 2)
+M = np.power(2, N)
+print(M)
+
+plt.yscale("log")
 plt.legend()
 plt.xlabel("Number of processes")
 plt.ylabel("Time (s)")
