@@ -1,4 +1,4 @@
-dir="performance_NTB"
+dir="performance_pc"
 mkdir -p $dir
 
 

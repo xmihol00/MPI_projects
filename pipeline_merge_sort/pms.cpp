@@ -9,12 +9,22 @@
 // =======================================================================================================================================================
 // compile with: mpic++ -std=c++17 pms.cpp -o pms
 // run with:     mpirun -np <number of processes> ./pms [-a|-d]
-// test with:
+// test with:    https://github.com/xmihol00/MPI_projects/blob/main/pipeline_merge_sort/test.sh or manually with the following commands:
 //               D=""      # choose a sort direction, ASCENDING is by default
 //               N=8       # choose a number of processes larger than 1
 //               M=$((2**($N-1)))
 //               if [ "$D" = "-d" ]; then R="-r"; else R=""; fi
 //               dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N ./pms $D | sort -nc $R && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m"
+// =======================================================================================================================================================
+
+// =======================================================================================================================================================
+// Theoretically the pipeline merge sort algorithm should run in O(M), where M is the number of input values. However, experimentally measured times do
+// not support it. For M larger than 2^17 the run time starts to increase exponentially. This is caused by the amount of data required to be sent and 
+// received by the processes, as well as that the buffers will not fit into caches of processes with larger ranks.
+// See the measurements at:
+//      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_bara - for the Barbora supercomputer in Ostrava
+//      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_ntb  - for an 8 core laptop
+//      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_pc   - for a 4 core desktop
 // =======================================================================================================================================================
 
 #include <stdio.h>
@@ -31,12 +41,21 @@ using namespace std;
     #define INFO_PRINT(rank, message) 
 #endif
 
+/**
+ * @brief Possible sort directions.
+ */
 enum SortDirection
 {
     ASCENDING,
     DESCENDING
 };
 
+/**
+ * @brief Communication styles between processes. See the code below for more information.
+ *        SINGLE - Values are sent one by one across both channels.
+ *        BATCH  - Values are sent in batches of size 2^rank across the TOP channel to reduce number of messages as the rank+1 process can only start
+ *                 merge-sorting, when it receives 2^rank values on the TOP channel. Values are sent one by one across the BOTTOM channel.
+ */
 enum CommunicationStyles
 {
     SINGLE,
@@ -44,9 +63,8 @@ enum CommunicationStyles
 };
 
 /**
- * @brief Sorts a sequence of 2^(N-1) values using the pipeline merge sort algorithm with N processes.
+ * @brief Sorts a sequence of [(2^(N-2)+1), ..., (2^(N-1))] values using the pipeline merge sort algorithm with N processes.
  *        The input values are read from STDIN and the sorted sequence is written to STDOUT.
- *        Only sequences of a length equal to 2^(N-1) are allowed for N processes.
  */
 template <CommunicationStyles communication_style = CommunicationStyles::BATCH>
 class PipelineMergeSort
@@ -90,7 +108,7 @@ class PipelineMergeSort
         uint8_t *_output_buffer;        // output buffer to send values to the next process
 
         // use a queue for the input values from the bottom channel, as it is necessary to read the values from the bottom channel as fast as possible
-        queue<uint8_t> _input_queue;    // input queue to receive values from the previous process' bottom stream
+        queue<uint8_t> _input_queue;    // input queue to receive values from the previous process bottom stream
 
         bool _ping_pong = true;         // flag to indicate which channel/stream to use as output
 
@@ -102,21 +120,22 @@ class PipelineMergeSort
         MPI_Status _top_status = {0, 0, 0, 0, 0};
         MPI_Status _bot_status = {0, 0, 0, 0, 0};
 
-        // helper functions to check the status of the MPI communication
+        // helper functions to check the status of the MPI communication and terminate the program if an error occurs
         void check_top_status(int size);
         void check_bot_status();
 
-        void setup_top_channel();
-        void top_send(uint8_t value);
-        void clean_top_channel();
-        void sync_top_channel();
-        void bot_receive();
-        void bot_send(uint8_t value);
-
-        template<SortDirection direction>
-        void input_process(); // first process (rank == 0) reads the input values from STDIN and sends them in an alternating fashion to the 2nd process
+        void setup_top_channel();       // receive 2^(rank-1) values from the previous process in a batch (BATCH communication style),  
+                                        // or fill the batch one by one (SINGLE communication style)
+        void top_send(uint8_t value);   // buffer a value to be sent in a batch (BATCH communication style), or send it immediately (SINGLE communication style)
+        void clean_top_channel();       // send the batch of values to the next process asynchronously (BATCH communication style), 
+                                        // or do nothing (SINGLE communication style)
+        void sync_top_channel();        // wait for the batch to be received by the next process (BATCH communication style), or do nothing (SINGLE communication style)
+        void bot_receive();             // receive a value from the previous process bottom stream and buffer it into a queue (both communication styles)
+        void bot_send(uint8_t value);   // send a value to the next process bottom stream immediately (both communication styles)
 
         // let the compiler optimize the code for the specified sort direction
+        template<SortDirection direction>
+        void input_process(); // first process (rank == 0) reads the input values from STDIN and sends them in an alternating fashion to the 2nd process
         template <SortDirection direction>
         void merge_process(); // processes with ranks between 1 and size-2 receive values from the previous process in batches of size 2^(rank-1), 
                               // merge sort them into batches of size 2^rank and send them to the next process
@@ -338,9 +357,9 @@ void PipelineMergeSort<communication_style>::input_process()
     for (; i < ITERATIONS; i++)
     {    
         // read the input value from stdin
-        if (!cin.get(character_value.character)) // no more input values
+        if (!cin.get(character_value.character))
         {
-            break;
+            break; // no more input values, padding will be used to fill the rest of the input values
         }
         
         if (_ping_pong) // write to top channel
@@ -362,7 +381,7 @@ void PipelineMergeSort<communication_style>::input_process()
     }
 
     MPI_Request size_request;
-    MPI_Isend(&i, 1, MPI_UINT64_T, SIZE-1, 0, MPI_COMM_WORLD, &size_request); // send the number of input values to last process
+    MPI_Isend(&i, 1, MPI_UINT64_T, SIZE-1, 0, MPI_COMM_WORLD, &size_request); // send the actual number of input values to the last process
 
     uint8_t padding = direction == ASCENDING ? 0xFF : 0x00; // padd the input values with the maximum (ASCENDING sort) or minimum (DESCENDING sort) value
     for (; i < ITERATIONS; i++)
@@ -394,7 +413,7 @@ void PipelineMergeSort<communication_style>::merge_process()
 {
     for (uint64_t n = 0; n < ITERATIONS; n++)
     {
-        setup_top_channel();
+        setup_top_channel(); // receive 2^(rank-1) values from the previous process
 
         uint64_t i = 0, j = 0; // i - top channel index, j - bottom stream index
         if (_ping_pong) // write to top channel in batches
@@ -508,6 +527,7 @@ void PipelineMergeSort<communication_style>::output_process()
     setup_top_channel(); // wait for half of the values to be received
 
     uint64_t i = 0, j = 0;
+    // print half of the values sorted
     while (j++ < INPUT_SIZE) // read all values from the bottom stream as fast as possible and buffer them if necessary
     {
         bot_receive();
@@ -523,9 +543,9 @@ void PipelineMergeSort<communication_style>::output_process()
     }
 
     uint64_t k = INPUT_SIZE;
-    MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of input values to be received from the first process
+    MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of actual input values to be received from the first process
 
-    while (!_input_queue.empty() && i < INPUT_SIZE && k++ < outputs) // empty one of the input data structures
+    while (!_input_queue.empty() && i < INPUT_SIZE && k++ < outputs) // empty one of the input data structures or stop if there are no more values to be printed
     {
         if ((direction == ASCENDING && _input_buffer[i] < _input_queue.front()) || (direction == DESCENDING && _input_buffer[i] > _input_queue.front()))
         {
