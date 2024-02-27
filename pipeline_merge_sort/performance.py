@@ -63,7 +63,7 @@ for log in [False, True]:
     y_pred = regressor.predict(N.reshape(-1, 1))
     plt.plot(N, y_pred, label="Linear regression on averaged run times", linestyle="--", color="black")
 
-    plt.xticks(np.arange(2, 21))
+    plt.xticks(np.arange(2, max + 2))
     if log:
         plt.yscale("log")
         plt.ylabel("Time (s) in logarithmic scale")

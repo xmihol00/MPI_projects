@@ -21,10 +21,10 @@
 
 // =======================================================================================================================================================
 // Theoretically the pipeline merge sort algorithm should run in O(M), where M is the number of input values. However, experimentally measured times do
-// not support it. For M larger than 2^17 the run time starts to increase exponentially. This is caused by the amount of data required to be sent and 
-// received by the processes, as well as that the buffers will not fit into caches of processes with larger ranks.
+// not support it. For M larger than 2^17 the run time starts to increase exponentially even on a machine with enough CPUs (cores). This is caused by the 
+// amount of data required to be sent and received by the processes, as well as that the buffers will not fit into caches of processes with larger ranks.
 // See the measurements at:
-//      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_bara - for the Barbora supercomputer in Ostrava
+//      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_bara - for the Barbora supercomputer in Ostrava 36 cores per node
 //      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_ntb  - for an 8 core laptop
 //      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_pc   - for a 4 core desktop
 // =======================================================================================================================================================
