@@ -18,7 +18,7 @@ for D in -a -d; do
         if [ "$C" = "-b" ]; then
             title="$title Batch"
         else
-            title="$title Bingle"
+            title="$title Single"
         fi
         echo -e "testing: \e[34m$title\e[0m" | tee -a failed.log
         for M in $(python3 -c "import numpy as np; samples = np.random.lognormal(mean=np.log(2**8), sigma=6, size=10000).astype(np.int64); print(' '.join(map(str, samples[(samples <= 2**32) & (samples >= 2)][:50])))"); do

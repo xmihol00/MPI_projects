@@ -21,7 +21,7 @@ for D in -a -d; do
         fi
         echo -e "testing: \e[34m$file_name\e[0m"
         rm -f performance/$file_name
-        for N in {2..10}; do
+        for N in {2..26}; do
             M=$((2**($N-1)))
             echo "N=$N, M=$M, D=$D, C=$C"
             start_time=$(date +%s.%N)
