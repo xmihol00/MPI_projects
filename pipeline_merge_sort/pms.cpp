@@ -27,6 +27,10 @@
 //      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_bara - for the Barbora supercomputer in Ostrava 36 cores per node
 //      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_ntb  - for an 8 core laptop
 //      https://github.com/xmihol00/MPI_projects/tree/main/pipeline_merge_sort/performance_pc   - for a 4 core desktop
+//
+// The algorithms is communication bound. Improved performance could be reached by decreasing the number of processes, therefore the number of communication
+// steps, and by overlapping the communication and computation. This is however contrary to the theoretical O(M) complexity of the algorithm, which is
+// going to be increased with less processes.
 // =======================================================================================================================================================
 
 #include <stdio.h>
@@ -635,6 +639,8 @@ int main(int argc, char *argv[])
         }
     }
 
+    // use separate communicators to simulate the top and bottom channels, on architectures with more network interfaces this speeds up 
+    // the communication, otherwise the communication will be serialized by the MPI library
     MPI_Comm top_comm, bot_comm;
     // simulate the top channel with a separate communicator, the top channel will be always used to send a whole batch of data, 
     // i.e. 2^rank elements, since the rank+1 process can only start computing after the rank process has finished 2^rank elements
