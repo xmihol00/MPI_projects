@@ -10,7 +10,7 @@ for numbers in 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 30 31 32 33 34 62 63
     proc=$(python3 -c "from math import ceil; print (ceil($calc))")
 
     echo "N=$proc, M=$numbers" | tee -a test_out.txt
-    dd if=/dev/random bs=1 count=$numbers 2>/dev/null | mpirun --prefix /usr/local/share/OpenMPI  -np $proc pms | tee out.txt | (sort -nc && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m") | tee -a test_out.txt
+    dd if=/dev/random bs=1 count=$numbers 2>/dev/null | mpirun --prefix /usr/local/share/OpenMPI -np $proc pms | tee out.txt | (sort -nc && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m") | tee -a test_out.txt
     if [ $(wc -l < out.txt) -eq $numbers ]; then
         echo -e "\e[32mCORRECT COUNT\e[0m" | tee -a test_out.txt
     else

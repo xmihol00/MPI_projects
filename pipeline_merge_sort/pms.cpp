@@ -390,7 +390,9 @@ void PipelineMergeSort<communication_style>::input_process()
     MPI_Isend(&i, 1, MPI_UINT64_T, SIZE-1, 0, MPI_COMM_WORLD, &size_request); // send the actual number of input values to the last process
 
     uint8_t padding = direction == ASCENDING ? 0xFF : 0x00; // padd the input values with the maximum (ASCENDING sort) or minimum (DESCENDING sort) value
-    for (; i < ITERATIONS; i++)
+    
+    // make sure we copy 'i' into 'j', since the value of is being send to the last process, thus cannot be modified
+    for (uint64_t j = i; j < ITERATIONS; j++)
     {
         if (_ping_pong) // write to top channel
         {

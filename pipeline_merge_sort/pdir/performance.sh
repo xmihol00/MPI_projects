@@ -1,5 +1,5 @@
-ml matplotlib/3.5.2-foss-2022a
-ml OpenMPI/4.1.4-GCC-11.3.0
+ml matplotlib
+ml OpenMPI
 mpic++ -O3 -o pms ../pms.cpp
 
 mkdir -p performance
@@ -25,7 +25,7 @@ for D in -a -d; do
             M=$((2**($N-1)))
             echo "N=$N, M=$M, D=$D, C=$C"
             start_time=$(date +%s.%N)
-            head -c $M nums.bin | mpirun --oversubscribe -np $N pms $D $C >/dev/null
+            mpiexec -np $N pms $D $C <nums.bin >/dev/null
             end_time=$(date +%s.%N)
             diff=$(echo "scale=3; $end_time - $start_time" | bc)
             echo "$N, $diff" >> performance/$file_name
