@@ -19,12 +19,14 @@
 
 #include "ParallelHeatSolver.hpp"
 
+using namespace std;
+
 ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties& simulationProps,
                                        const MaterialProperties&   materialProps)
 : HeatSolverBase(simulationProps, materialProps)
 {
-  MPI_Comm_size(MPI_COMM_WORLD, &mWorldSize);
-  MPI_Comm_rank(MPI_COMM_WORLD, &mWorldRank);
+  MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
+  MPI_Comm_rank(MPI_COMM_WORLD, &_worldRank);
 
 /**********************************************************************************************************************/
 /*                                  Call init* and alloc* methods in correct order                                    */
@@ -65,8 +67,21 @@ void ParallelHeatSolver::initGridTopology()
 /*                          Initialize 2D grid topology using non-periodic MPI Cartesian topology.                    */
 /*                       Also create a communicator for middle column average temperature computation.                */
 /**********************************************************************************************************************/
-  
-  
+
+    int nx, ny;
+    mSimulationProps.getDecompGrid(nx, ny);
+
+    MPI_Cart_create(MPI_COMM_WORLD, 2, array<int, 2>{nx, ny}.data(), array<int, 2>{false, false}.data(), 0, &_topologyComm);
+
+    int middleColumn = nx >> 1;
+    if (_worldRank % nx == middleColumn)
+    {
+        MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / nx, &_middleColComm);
+    }
+    else
+    {
+        MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_middleColComm);
+    }
 }
 
 void ParallelHeatSolver::deinitGridTopology()
@@ -75,7 +90,8 @@ void ParallelHeatSolver::deinitGridTopology()
 /*      Deinitialize 2D grid topology and the middle column average temperature computation communicator              */
 /**********************************************************************************************************************/
 
-
+    MPI_Comm_free(&_topologyComm);
+    MPI_Comm_free(&_middleColComm);
 }
 
 void ParallelHeatSolver::initDataDistribution()

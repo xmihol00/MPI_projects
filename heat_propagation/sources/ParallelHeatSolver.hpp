@@ -227,13 +227,16 @@ class ParallelHeatSolver : public HeatSolverBase
     static constexpr std::size_t haloZoneSize{2};
 
     /// @brief Process rank in the global communicator (MPI_COMM_WORLD).
-    int mWorldRank{};
+    int _worldRank{};
 
     /// @brief Total number of processes in MPI_COMM_WORLD.
-    int mWorldSize{};
+    int _worldSize{};
 
     /// @brief Output file handle (parallel or sequential).
     Hdf5FileHandle mFileHandle{};
+
+    MPI_Comm _topologyComm;
+    MPI_Comm _middleColComm;
 };
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */
