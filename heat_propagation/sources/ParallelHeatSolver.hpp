@@ -237,6 +237,22 @@ class ParallelHeatSolver : public HeatSolverBase
 
     MPI_Comm _topologyComm;
     MPI_Comm _middleColComm;
+
+    struct Sizes
+    {
+        size_t global;
+        size_t localVertical;
+        size_t localHorizontal;
+    } _edgeSizes;
+
+    std::vector<float, AlignedAllocator<float>> _neighborCurrentHaloZones;
+    std::vector<float, AlignedAllocator<float>> _neighborNextHaloZones;
+
+    std::vector<float, AlignedAllocator<float>> _localHaloZones;
+    std::vector<float, AlignedAllocator<float>> _neighborHaloZones;
+
+    std::vector<float, AlignedAllocator<float>> _localCurrentTile;
+    std::vector<float, AlignedAllocator<float>> _localNextTile;
 };
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */
