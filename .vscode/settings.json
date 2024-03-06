@@ -7,6 +7,11 @@
         "string_view": "cpp",
         "initializer_list": "cpp",
         "regex": "cpp",
-        "utility": "cpp"
+        "utility": "cpp",
+        "string": "cpp",
+        "iostream": "cpp",
+        "mutex": "cpp",
+        "streambuf": "cpp",
+        "cmath": "cpp"
     }
 }

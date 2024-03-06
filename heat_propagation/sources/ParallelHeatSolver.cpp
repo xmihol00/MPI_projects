@@ -29,11 +29,19 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
     MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &_worldRank);
 
+    mSimulationProps.getDecompGrid(_decomposition.nx, _decomposition.ny);
+
+    _edgeSizes.global = mMaterialProps.getEdgeSize();
+    _edgeSizes.localHorizontal = _edgeSizes.global / _decomposition.nx;
+    _edgeSizes.localVertical = _edgeSizes.global / _decomposition.ny;
+
     /**********************************************************************************************************************/
     /*                                  Call init* and alloc* methods in correct order                                    */
     /**********************************************************************************************************************/
 
     initGridTopology();
+    initDataDistribution();
+    allocLocalTiles();
 
     if (!mSimulationProps.getOutputFileName().empty())
     {
@@ -67,24 +75,15 @@ void ParallelHeatSolver::initGridTopology()
     /*                       Also create a communicator for middle column average temperature computation.                */
     /**********************************************************************************************************************/
 
-    int nx, ny;
-    mSimulationProps.getDecompGrid(nx, ny);
+    MPI_Cart_create(MPI_COMM_WORLD, 2, array<int, 2>{_decomposition.ny, _decomposition.nx}.data(), array<int, 2>{false, false}.data(), 0, &_topologyComm);
+    MPI_Comm_rank(_topologyComm, &_topologyRank);
 
-    if (_worldRank == 0)
+    int middleColumn = _decomposition.nx >> 1;
+    if (_worldRank % _decomposition.nx == middleColumn) // middle column 
     {
-        _edgeSizes.global = mMaterialProps.getEdgeSize();
-        _edgeSizes.localHorizontal = _edgeSizes.global / nx;
-        _edgeSizes.localVertical = _edgeSizes.global / ny;
+        MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / _decomposition.nx, &_middleColComm);
     }
-
-    MPI_Cart_create(MPI_COMM_WORLD, 2, array<int, 2>{nx, ny}.data(), array<int, 2>{false, false}.data(), 0, &_topologyComm);
-
-    int middleColumn = nx >> 1;
-    if (_worldRank % nx == middleColumn)
-    {
-        MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / nx, &_middleColComm);
-    }
-    else
+    else // other columns
     {
         MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_middleColComm);
         _middleColComm = MPI_COMM_NULL;
@@ -109,6 +108,25 @@ void ParallelHeatSolver::initDataDistribution()
     /**********************************************************************************************************************/
     /*                 Initialize variables and MPI datatypes for data distribution (float and int).                      */
     /**********************************************************************************************************************/
+
+    if (_decomposition.ny > 1)
+    {
+        if (_worldRank % _decomposition.nx == 0) // first columns
+        {
+            MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / _decomposition.nx, &_initialScatterColComm);
+        }
+        else // other columns
+        {
+            MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_initialScatterColComm);
+            _initialScatterColComm = MPI_COMM_NULL;
+        }
+    }
+    else
+    {
+        _initialScatterColComm = MPI_COMM_NULL;
+    }
+
+    MPI_Comm_split(MPI_COMM_WORLD, _worldRank / _decomposition.nx, _worldRank % _decomposition.nx, &_initialScatterRowComm);
 }
 
 void ParallelHeatSolver::deinitDataDistribution()
@@ -116,6 +134,11 @@ void ParallelHeatSolver::deinitDataDistribution()
     /**********************************************************************************************************************/
     /*                       Deinitialize variables and MPI datatypes for data distribution.                              */
     /**********************************************************************************************************************/
+    if (_decomposition.ny > 1 && _initialScatterColComm != MPI_COMM_NULL)
+    {
+        MPI_Comm_free(&_initialScatterColComm);
+    }
+    MPI_Comm_free(&_initialScatterRowComm);
 }
 
 void ParallelHeatSolver::allocLocalTiles()
@@ -124,6 +147,26 @@ void ParallelHeatSolver::allocLocalTiles()
     /*            Allocate local tiles for domain map (1x), domain parameters (1x) and domain temperature (2x).           */
     /*                                               Use AlignedAllocator.                                                */
     /**********************************************************************************************************************/
+
+    _tempTiles[0].resize(_edgeSizes.localHorizontal * _edgeSizes.localVertical);
+    _tempTiles[1].resize(_edgeSizes.localHorizontal * _edgeSizes.localVertical);
+    _domainParamsTile.resize(_edgeSizes.localHorizontal * _edgeSizes.localVertical);
+    _domainMapTile.resize(_edgeSizes.localHorizontal * _edgeSizes.localVertical);
+
+    _tempHaloZones[0].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _tempHaloZones[1].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _tempHaloZones[2].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _domainMapHaloZones[0].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _domainMapHaloZones[1].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _domainParamsHaloZones[0].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+    _domainParamsHaloZones[1].resize(_edgeSizes.localHorizontal * 4 + _edgeSizes.localVertical * 4);
+
+    if (_initialScatterColComm != MPI_COMM_NULL)
+    {
+        _initialScatterTemp.resize(_edgeSizes.global * _edgeSizes.localVertical);
+        _initialScatterDomainParams.resize(_edgeSizes.global * _edgeSizes.localVertical);
+        _initialScatterDomainMap.resize(_edgeSizes.global * _edgeSizes.localVertical);
+    }
 }
 
 void ParallelHeatSolver::deallocLocalTiles()
@@ -220,9 +263,113 @@ void ParallelHeatSolver::run(std::vector<float, AlignedAllocator<float>> &outRes
 {
     std::array<MPI_Request, 8> requestsP2P{};
     
-    cerr << "PRE BCAST - rank: " << _worldRank << " sizes: " << _edgeSizes.global << " " << _edgeSizes.localHorizontal << " " << _edgeSizes.localVertical << endl;
-    MPI_Bcast(&_edgeSizes, sizeof(_edgeSizes), MPI_BYTE, 0, MPI_COMM_WORLD);
-    cerr << "POST BCAST - rank: " << _worldRank << " sizes: " << _edgeSizes.global << " " << _edgeSizes.localHorizontal << " " << _edgeSizes.localVertical << endl;
+    const float *scatteredTempRow = mMaterialProps.getInitialTemperature().data();
+    const float *scatteredDomainParamsRow = mMaterialProps.getDomainParameters().data();
+    const int *scatteredDomainMapRow = mMaterialProps.getDomainMap().data();
+
+    if (_worldRank == 0)
+    {
+        for (int i = 0; i < _edgeSizes.global; i++)
+        {
+            for (int j = 0; j < _edgeSizes.global; j++)
+            {
+                ((float *)((size_t)(&scatteredTempRow[i * _edgeSizes.global + j])))[0] = (j*4) / _edgeSizes.global + (i / 2 + 5) * 20;
+                cerr << scatteredTempRow[i * _edgeSizes.global + j] << " ";
+            }
+            cerr << endl;
+        }
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    if (_initialScatterColComm != MPI_COMM_NULL)
+    {
+        MPI_Scatter(mMaterialProps.getInitialTemperature().data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_FLOAT,
+                    _initialScatterTemp.data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_FLOAT, 0, _initialScatterColComm);
+        scatteredTempRow = _initialScatterTemp.data();
+
+        MPI_Scatter(mMaterialProps.getDomainParameters().data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_FLOAT,
+                    _initialScatterDomainParams.data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_FLOAT, 0, _initialScatterColComm);
+        scatteredDomainParamsRow = _initialScatterDomainParams.data();
+        
+        MPI_Scatter(mMaterialProps.getDomainMap().data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_INT,
+                    _initialScatterDomainMap.data(), _edgeSizes.global * _edgeSizes.localVertical, MPI_INT, 0, _initialScatterColComm);
+        scatteredDomainMapRow = _initialScatterDomainMap.data();
+    }
+
+    for (size_t i = 0, j = 0; i < _edgeSizes.localVertical * _edgeSizes.global; i += _edgeSizes.global, j += _edgeSizes.localHorizontal)
+    {
+        MPI_Scatter(scatteredTempRow + i, _edgeSizes.localHorizontal, MPI_FLOAT,
+                    _tempTiles[0].data() + j, _edgeSizes.localHorizontal, MPI_FLOAT, 0, _initialScatterRowComm);
+        MPI_Scatter(scatteredDomainParamsRow + i, _edgeSizes.localHorizontal, MPI_FLOAT,
+                    _domainParamsTile.data() + j, _edgeSizes.localHorizontal, MPI_FLOAT, 0, _initialScatterRowComm);
+        MPI_Scatter(scatteredDomainMapRow + i, _edgeSizes.localHorizontal, MPI_INT,
+                    _domainMapTile.data() + j, _edgeSizes.localHorizontal, MPI_INT, 0, _initialScatterRowComm);
+    }
+    
+    // copy initial temperature to the second buffer
+    copy(_tempTiles[0].begin(), _tempTiles[0].end(), _tempTiles[1].begin());
+
+    // copy to halo zones North and South
+    size_t haloHorizontalOffset = 2 * _edgeSizes.localHorizontal;
+    copy(_tempTiles[0].begin(), _tempTiles[0].begin() + haloHorizontalOffset, _tempHaloZones[0].begin());
+    copy(_tempTiles[0].end() - haloHorizontalOffset, _tempTiles[0].end(), _tempHaloZones[0].begin() + haloHorizontalOffset);
+
+    copy(_domainMapHaloZones[0].begin(), _domainMapHaloZones[0].begin() + haloHorizontalOffset, _domainMapTile.begin());
+    copy(_domainMapHaloZones[0].end() - haloHorizontalOffset, _domainMapHaloZones[0].end(), _domainMapTile.begin() + haloHorizontalOffset);
+
+    copy(_domainParamsHaloZones[0].begin(), _domainParamsHaloZones[0].begin() + haloHorizontalOffset, _domainParamsTile.begin());
+    copy(_domainParamsHaloZones[0].end() - haloHorizontalOffset, _domainParamsHaloZones[0].end(), _domainParamsTile.begin() + haloHorizontalOffset);
+
+    // copy to halo zones West and East
+    size_t haloVerticalOffset = 2 * _edgeSizes.localVertical;
+    for (size_t i = 0; i < _edgeSizes.localVertical; i++)
+    {
+        _tempHaloZones[0][2 * haloHorizontalOffset + 2 * i] = _tempTiles[0][i * _edgeSizes.localHorizontal];
+        _tempHaloZones[0][2 * haloHorizontalOffset + 2 * i + 1] = _tempTiles[0][i * _edgeSizes.localHorizontal + 1];
+        _tempHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i] = _tempTiles[0][i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 2];
+        _tempHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i + 1] = _tempTiles[0][i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 1];
+
+        _domainMapHaloZones[0][2 * haloHorizontalOffset + 2 * i] = _domainMapTile[i * _edgeSizes.localHorizontal];
+        _domainMapHaloZones[0][2 * haloHorizontalOffset + 2 * i + 1] = _domainMapTile[i * _edgeSizes.localHorizontal + 1];
+        _domainMapHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i] = _domainMapTile[i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 2];
+        _domainMapHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i + 1] = _domainMapTile[i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 1];
+
+        _domainParamsHaloZones[0][2 * haloHorizontalOffset + 2 * i] = _domainParamsTile[i * _edgeSizes.localHorizontal];
+        _domainParamsHaloZones[0][2 * haloHorizontalOffset + 2 * i + 1] = _domainParamsTile[i * _edgeSizes.localHorizontal + 1];
+        _domainParamsHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i] = _domainParamsTile[i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 2];
+        _domainParamsHaloZones[0][2 * haloHorizontalOffset + haloVerticalOffset + 2 * i + 1] = _domainParamsTile[i * _edgeSizes.localHorizontal + _edgeSizes.localHorizontal - 1];
+    }
+
+    // parameters for all to all gather
+    int sendCounts[4] = {haloHorizontalOffset, haloHorizontalOffset, haloVerticalOffset, haloVerticalOffset};
+    int displacements[4] = {0, haloHorizontalOffset, 2 * haloHorizontalOffset, 2 * haloHorizontalOffset + haloVerticalOffset};
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    printHalo(0, 0);
+    printHalo(1, 0);
+    printHalo(2, 0);
+    printHalo(3, 0);
+    
+    // gather the halo zones across the ranks
+    MPI_Neighbor_alltoallv(_tempHaloZones[0].data(), sendCounts, displacements, MPI_FLOAT,
+                           _tempHaloZones[1].data(), sendCounts, displacements, MPI_FLOAT, _topologyComm);
+    MPI_Neighbor_alltoallv(_domainMapHaloZones[0].data(), sendCounts, displacements, MPI_INT,
+                           _domainMapHaloZones[1].data(), sendCounts, displacements, MPI_INT, _topologyComm);
+    MPI_Neighbor_alltoallv(_domainParamsHaloZones[0].data(), sendCounts, displacements, MPI_FLOAT,
+                           _domainParamsHaloZones[1].data(), sendCounts, displacements, MPI_FLOAT, _topologyComm);
+
+    printTile(0);
+    printTile(1);
+    printTile(2);
+    printTile(3);
+
+    printHalo(0, 1);
+    printHalo(1, 1);
+    printHalo(2, 1);
+    printHalo(3, 1);
+
     /**********************************************************************************************************************/
     /*                                         Scatter initial data.                                                      */
     /**********************************************************************************************************************/

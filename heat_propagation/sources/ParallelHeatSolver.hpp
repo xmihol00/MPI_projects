@@ -227,16 +227,25 @@ private:
     static constexpr std::size_t haloZoneSize{2};
 
     /// @brief Process rank in the global communicator (MPI_COMM_WORLD).
-    int _worldRank{};
+    int _worldRank;
+    int _topologyRank;
 
     /// @brief Total number of processes in MPI_COMM_WORLD.
-    int _worldSize{};
+    int _worldSize;
 
     /// @brief Output file handle (parallel or sequential).
     Hdf5FileHandle mFileHandle{};
 
     MPI_Comm _topologyComm;
     MPI_Comm _middleColComm;
+    MPI_Comm _initialScatterColComm;
+    MPI_Comm _initialScatterRowComm;
+
+    struct Decomposition
+    {
+        int nx;
+        int ny;
+    } _decomposition;
 
     struct Sizes
     {
@@ -245,14 +254,69 @@ private:
         size_t localHorizontal;
     } _edgeSizes;
 
-    std::vector<float, AlignedAllocator<float>> _neighborCurrentHaloZones;
-    std::vector<float, AlignedAllocator<float>> _neighborNextHaloZones;
+    std::vector<float, AlignedAllocator<float>> _tempTiles[2];
+    std::vector<float, AlignedAllocator<float>> _domainParamsTile;
+    std::vector<int, AlignedAllocator<int>> _domainMapTile;
 
-    std::vector<float, AlignedAllocator<float>> _localHaloZones;
-    std::vector<float, AlignedAllocator<float>> _neighborHaloZones;
+    std::vector<float, AlignedAllocator<float>> _tempHaloZones[3];
+    std::vector<float, AlignedAllocator<float>> _domainParamsHaloZones[2];
+    std::vector<int, AlignedAllocator<int>> _domainMapHaloZones[2];
 
-    std::vector<float, AlignedAllocator<float>> _localCurrentTile;
-    std::vector<float, AlignedAllocator<float>> _localNextTile;
+    std::vector<float, AlignedAllocator<float>> _initialScatterTemp;
+    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
+    std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
+
+    void printTile(int rank)
+    {
+        if (_worldRank == rank)
+        {
+            std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
+            for (int i = 0; i < _edgeSizes.localVertical; i++)
+            {
+                for (int j = 0; j < _edgeSizes.localHorizontal; j++)
+                {
+                    std::cerr << _tempTiles[0][i * _edgeSizes.localHorizontal + j] << " ";
+                }
+                std::cerr << std::endl;
+            }
+            std::cerr << std::endl;
+            std::cerr << std::flush;
+        }
+
+        std::cerr << std::flush;
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
+
+    void printHalo(int rank, int zone)
+    {
+        if (_worldRank == rank)
+        {
+            std::cerr << "Rank " << _worldRank << " halo:" << std::endl;
+            for (int i = 0; i < 4; i++)
+            {
+                for (int j = 0; j < _edgeSizes.localHorizontal; j++)
+                {
+                    std::cerr << _tempHaloZones[zone][i * _edgeSizes.localHorizontal + j] << " ";
+                }
+                std::cerr << std::endl;
+                if (i == 1)
+                {
+                    std::cerr << std::endl;
+                }
+            }
+            std::cerr << std::endl;
+            for (int i = 0; i < 2 * _edgeSizes.localVertical; i += 2)
+            {
+                std::cerr << _tempHaloZones[zone][4 * _edgeSizes.localHorizontal + i] << " " <<  _tempHaloZones[zone][4 * _edgeSizes.localHorizontal + i + 1] << "    " <<
+                    _tempHaloZones[zone][4 * _edgeSizes.localHorizontal + 2 * _edgeSizes.localVertical + i] << " " << _tempHaloZones[zone][4 * _edgeSizes.localHorizontal + 2 * _edgeSizes.localVertical + i + 1] << std::endl; 
+            }
+            std::cerr << std::endl;
+            std::cerr << std::flush;
+        }
+
+        std::cerr << std::flush;
+        MPI_Barrier(MPI_COMM_WORLD);
+    }
 };
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */
