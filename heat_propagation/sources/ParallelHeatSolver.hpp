@@ -1,6 +1,6 @@
 /**
  * @file    ParallelHeatSolver.hpp
- * 
+ *
  * @author  David Mihola <xmihol00@fit.vutbr.cz>
  *
  * @brief   Course: PPP 2023/2024 - Project 1
@@ -30,7 +30,7 @@
  */
 class ParallelHeatSolver : public HeatSolverBase
 {
-  public:
+public:
     /**
      * @brief Constructor - Initializes the solver. This includes:
      *        - Construct 2D grid of tiles.
@@ -41,8 +41,8 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param simulationProps Parameters of simulation - passed into base class.
      * @param materialProps   Parameters of material - passed into base class.
      */
-    ParallelHeatSolver(const SimulationProperties& simulationProps, const MaterialProperties& materialProps);
-    
+    ParallelHeatSolver(const SimulationProperties &simulationProps, const MaterialProperties &materialProps);
+
     /// @brief Inherit constructors from the base class.
     using HeatSolverBase::HeatSolverBase;
 
@@ -62,10 +62,10 @@ class ParallelHeatSolver : public HeatSolverBase
      *                  NOTE: The vector is allocated (and should be used) *ONLY*
      *                        by master process (rank 0 in MPI_COMM_WORLD)!
      */
-    virtual void run(std::vector<float, AlignedAllocator<float>>& outResult) override;
+    virtual void run(std::vector<float, AlignedAllocator<float>> &outResult) override;
 
-  protected:
-  private:
+protected:
+private:
     /**
      * @brief Get type of the code.
      * @return Returns type of the code.
@@ -118,8 +118,8 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param globalData Global data to be scattered.
      * @param localData  Local data to be filled with scattered values.
      */
-    template<typename T>
-    void scatterTiles(const T* globalData, T* localData);
+    template <typename T>
+    void scatterTiles(const T *globalData, T *localData);
 
     /**
      * @brief Gather local tiles to global data.
@@ -127,35 +127,35 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param localData  Local data to be gathered.
      * @param globalData Global data to be filled with gathered values.
      */
-    template<typename T>
-    void gatherTiles(const T* localData, T* globalData);
+    template <typename T>
+    void gatherTiles(const T *localData, T *globalData);
 
     /**
      * @brief Compute temperature of the next iteration in the halo zones.
      * @param oldTemp Old temperature values.
      * @param newTemp New temperature values.
      */
-    void computeHaloZones(const float* oldTemp, float* newTemp);
+    void computeHaloZones(const float *oldTemp, float *newTemp);
 
     /**
      * @brief Start halo exchange using point-to-point communication.
      * @param localData Local data to be exchanged.
      * @param request   Array of MPI_Request objects to be filled with requests.
      */
-    void startHaloExchangeP2P(float* localData, std::array<MPI_Request, 8>& request);
+    void startHaloExchangeP2P(float *localData, std::array<MPI_Request, 8> &request);
 
     /**
      * @brief Await halo exchange using point-to-point communication.
      * @param request Array of MPI_Request objects to be awaited.
      */
-    void awaitHaloExchangeP2P(std::array<MPI_Request, 8>& request);
+    void awaitHaloExchangeP2P(std::array<MPI_Request, 8> &request);
 
     /**
      * @brief Start halo exchange using RMA communication.
      * @param localData Local data to be exchanged.
      * @param window    MPI_Win object to be used for RMA communication.
      */
-    void startHaloExchangeRMA(float* localData, MPI_Win window);
+    void startHaloExchangeRMA(float *localData, MPI_Win window);
 
     /**
      * @brief Await halo exchange using RMA communication.
@@ -170,7 +170,7 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param localData Data of the local tile.
      * @return Returns average temperature over middle of all tiles in the communicator.
      */
-    float computeMiddleColumnAverageTemperatureParallel(const float* localData) const;
+    float computeMiddleColumnAverageTemperatureParallel(const float *localData) const;
 
     /**
      * @brief Computes global average temperature of middle column of the domain
@@ -179,7 +179,7 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param globalData Simulation state collected to the MASTER rank.
      * @return Returns the average temperature.
      */
-    float computeMiddleColumnAverageTemperatureSequential(const float* globalData) const;
+    float computeMiddleColumnAverageTemperatureSequential(const float *globalData) const;
 
     /**
      * @brief Opens output HDF5 file for sequential access by MASTER rank only.
@@ -195,7 +195,7 @@ class ParallelHeatSolver : public HeatSolverBase
      * @param data       Square 2D array of edgeSize x edgeSize elements containing
      *                   simulation state to be stored in the file.
      */
-    void storeDataIntoFileSequential(hid_t fileHandle, std::size_t iteration, const float* globalData);
+    void storeDataIntoFileSequential(hid_t fileHandle, std::size_t iteration, const float *globalData);
 
     /**
      * @brief Opens output HDF5 file for parallel/cooperative access.
@@ -212,7 +212,7 @@ class ParallelHeatSolver : public HeatSolverBase
      *                   to be stored at tile specific position in the output file.
      *                   This method skips halo zones of the tile and stores only relevant data.
      */
-    void storeDataIntoFileParallel(hid_t fileHandle, std::size_t iteration, const float* localData);
+    void storeDataIntoFileParallel(hid_t fileHandle, std::size_t iteration, const float *localData);
 
     /**
      * @brief Determines if the process should compute average temperature of the middle column.
