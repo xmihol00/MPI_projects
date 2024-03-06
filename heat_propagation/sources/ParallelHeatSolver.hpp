@@ -132,10 +132,10 @@ private:
 
     /**
      * @brief Compute temperature of the next iteration in the halo zones.
-     * @param oldTemp Old temperature values.
-     * @param newTemp New temperature values.
+     * @param current index of the current temperature values.
+     * @param next    index of the next temperature values.
      */
-    void computeHaloZones(const float *oldTemp, float *newTemp);
+    void computeHaloZones(bool current, bool next);
 
     /**
      * @brief Start halo exchange using point-to-point communication.

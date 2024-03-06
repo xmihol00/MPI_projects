@@ -221,13 +221,21 @@ void ParallelHeatSolver::gatherTiles(const T *localData, T *globalData)
     /**********************************************************************************************************************/
 }
 
-void ParallelHeatSolver::computeHaloZones(const float *oldTemp, float *newTemp)
+void ParallelHeatSolver::computeHaloZones(bool current, bool next)
 {
     /**********************************************************************************************************************/
     /*  Compute new temperatures in halo zones, so that copy operations can be overlapped with inner region computation.  */
     /*                        Use updateTile method to compute new temperatures in halo zones.                            */
     /*                             TAKE CARE NOT TO COMPUTE THE SAME AREAS TWICE                                          */
     /**********************************************************************************************************************/
+
+    float *northUpperCurrentHaloZone = _tempHaloZones[current].data();
+    float *northLowerCurrentHaloZone = _tempHaloZones[current].data() + _edgeSizes.localWidth;
+    float *southUpperCurrentHaloZone = _tempHaloZones[current].data() + _offsets.northSouthHalo;
+    float *southLowerCurrentHaloZone = _tempHaloZones[current].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+
+    float *westCurrentHaloZones = _tempHaloZones[current].data() + 2 * _offsets.northSouthHalo;
+    float *eastCurrentHaloZones = _tempHaloZones[current].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo;
 }
 
 void ParallelHeatSolver::startHaloExchangeP2P(float *localData, std::array<MPI_Request, 8> &requests)
