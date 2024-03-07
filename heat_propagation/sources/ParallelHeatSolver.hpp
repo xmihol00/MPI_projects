@@ -138,17 +138,23 @@ private:
     void computeHaloZones(bool current, bool next);
 
     /**
-     * @brief Start halo exchange using point-to-point communication.
-     * @param localData Local data to be exchanged.
-     * @param request   Array of MPI_Request objects to be filled with requests.
+     * @brief Compute temperature of the next iteration in the local tiles.
+     * @param current index of the current temperature values.
+     * @param next    index of the next temperature values.
      */
-    void startHaloExchangeP2P(float *localData, std::array<MPI_Request, 8> &request);
+    void computeTiles(bool current, bool next);
+
+    /**
+     * @brief Start halo exchange using point-to-point communication.
+     * @param current Index of the current halo zone (to be received to).
+     * @param next    Index of the next halo zone (with newly computed values to be send).
+     */
+    void startHaloExchangeP2P(bool current, bool next);
 
     /**
      * @brief Await halo exchange using point-to-point communication.
-     * @param request Array of MPI_Request objects to be awaited.
      */
-    void awaitHaloExchangeP2P(std::array<MPI_Request, 8> &request);
+    void awaitHaloExchangeP2P();
 
     /**
      * @brief Start halo exchange using RMA communication.
@@ -252,7 +258,7 @@ private:
 
     /// @brief Process rank in the global communicator (MPI_COMM_WORLD).
     int _worldRank;
-    int _topologyRank;
+    int _rowRank;
 
     /// @brief Total number of processes in MPI_COMM_WORLD.
     int _worldSize;
@@ -264,6 +270,8 @@ private:
     MPI_Comm _middleColComm;
     MPI_Comm _initialScatterColComm;
     MPI_Comm _initialScatterRowComm;
+
+    MPI_Request _haloExchangeRequest;
 
     struct Decomposition
     {
@@ -297,18 +305,17 @@ private:
     std::vector<float, AlignedAllocator<float>> _tempHaloZones[2];
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZoneTmp;
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZone;
-    std::vector<int, AlignedAllocator<int>> _domainMapHaloZoneTmp;
-    std::vector<int, AlignedAllocator<int>> _domainMapHaloZone;
 
     std::vector<float, AlignedAllocator<float>> _initialScatterTemp;
-    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams; // TODO remove
+    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
 
     // parameters for all to all gather
-    int _sendCounts[4] = {0, };
+    int _transferCounts[4] = {0, };
     int _displacements[4] = {0, };
 
-    #define PRINT_DEBUG 0
+    #define PRINT_DEBUG 1
+    #define MANIPULATE_TEMP 0
 
     #if PRINT_DEBUG
         void printTile(int rank, int tile)
@@ -365,6 +372,8 @@ private:
             std::cerr << std::flush;
             MPI_Barrier(MPI_COMM_WORLD);
         }
+
+        bool _print = false;
     #endif
 };
 
@@ -380,12 +389,12 @@ inline constexpr bool ParallelHeatSolver::isBottomRow()
 
 inline constexpr bool ParallelHeatSolver::isLeftColumn()
 {
-    return _topologyRank == 0;
+    return _rowRank == 0;
 }
 
 inline constexpr bool ParallelHeatSolver::isRightColumn()
 {
-    return _topologyRank == _decomposition.nx - 1;
+    return _rowRank == _decomposition.nx - 1;
 }
 
 inline constexpr float ParallelHeatSolver::computePoint(
@@ -398,7 +407,49 @@ inline constexpr float ParallelHeatSolver::computePoint(
     int domainMapCenter
 )
 {
-    return 42;
+    if (_print)
+    {
+        // cerr all input parameters
+        std::cerr << _worldRank << " - tempNorthUpper: " << tempNorthUpper << std::endl;
+        std::cerr << _worldRank << " - tempNorthLower: " << tempNorthLower << std::endl;
+        std::cerr << _worldRank << " - tempSouthLower: " << tempSouthLower << std::endl;
+        std::cerr << _worldRank << " - tempSouthUpper: " << tempSouthUpper << std::endl;
+        std::cerr << _worldRank << " - tempWestLeft: " << tempWestLeft << std::endl;
+        std::cerr << _worldRank << " - tempWestRight: " << tempWestRight << std::endl;
+        std::cerr << _worldRank << " - tempEastRight: " << tempEastRight << std::endl;
+        std::cerr << _worldRank << " - tempEastLeft: " << tempEastLeft << std::endl;
+        std::cerr << _worldRank << " - tempCenter: " << tempCenter << std::endl;
+        std::cerr << _worldRank << " - domainParamNorthUpper: " << domainParamNorthUpper << std::endl;
+        std::cerr << _worldRank << " - domainParamNorthLower: " << domainParamNorthLower << std::endl;
+        std::cerr << _worldRank << " - domainParamSouthLower: " << domainParamSouthLower << std::endl;
+        std::cerr << _worldRank << " - domainParamSouthUpper: " << domainParamSouthUpper << std::endl;
+        std::cerr << _worldRank << " - domainParamWestLeft: " << domainParamWestLeft << std::endl;
+        std::cerr << _worldRank << " - domainParamWestRight: " << domainParamWestRight << std::endl;
+        std::cerr << _worldRank << " - domainParamEastRight: " << domainParamEastRight << std::endl;
+        std::cerr << _worldRank << " - domainParamEastLeft: " << domainParamEastLeft << std::endl;
+        std::cerr << _worldRank << " - domainParamCenter: " << domainParamCenter << std::endl;
+        std::cerr << _worldRank << " - domainMapCenter: " << domainMapCenter << std::endl;
+    }
+
+    const float frac = 1.0f / (
+        domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
+        domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
+    );
+
+    float pointTemp = frac * (
+        tempNorthUpper * domainParamNorthUpper + tempNorthLower * domainParamNorthLower + 
+        tempSouthLower * domainParamSouthLower + tempSouthUpper * domainParamSouthUpper + 
+        tempWestLeft * domainParamWestLeft + tempWestRight * domainParamWestRight + 
+        tempEastRight * domainParamEastRight + tempEastLeft * domainParamEastLeft + 
+        tempCenter * domainParamCenter
+    );
+
+    if (domainMapCenter == 0)
+    {
+        pointTemp = _simulationHyperParams.airFlowRate * _simulationHyperParams.coolerTemp + (1.0f - _simulationHyperParams.airFlowRate) * pointTemp;
+    }
+
+    return pointTemp;
 }
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */
