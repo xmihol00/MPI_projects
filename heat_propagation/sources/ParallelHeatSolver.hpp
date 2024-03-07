@@ -226,6 +226,24 @@ private:
 
     void exchangeInitialHaloZones();
 
+    inline constexpr bool isTopRow();
+
+    inline constexpr bool isBottomRow();
+
+    inline constexpr bool isLeftColumn();
+
+    inline constexpr bool isRightColumn();
+
+    inline constexpr float computePoint(
+        float tempNorthUpper, float tempNorthLower, float tempSouthLower, float tempSouthUpper, 
+        float tempWestLeft, float tempWestRight, float tempEastRight, float tempEastLeft, 
+        float tempCenter,
+        float domainParamNorthUpper, float domainParamNorthLower, float domainParamSouthLower, float domainParamSouthUpper,
+        float domainParamWestLeft, float domainParamWestRight, float domainParamEastRight, float domainParamEastLeft, 
+        float domainParamCenter,
+        int domainMapCenter
+    );
+
     /// @brief Code type string.
     static constexpr std::string_view codeType{"par"};
 
@@ -265,6 +283,12 @@ private:
         size_t northSouthHalo;
         size_t westEastHalo;
     } _offsets;
+
+    struct SimulationHyperParams
+    {
+        const float airFlowRate;
+        const float coolerTemp;
+    } _simulationHyperParams;
 
     std::vector<float, AlignedAllocator<float>> _tempTiles[2];
     std::vector<float, AlignedAllocator<float>> _domainParamsTile;
@@ -343,5 +367,38 @@ private:
         }
     #endif
 };
+
+inline constexpr bool ParallelHeatSolver::isTopRow()
+{
+    return _worldRank < _decomposition.nx;
+}
+
+inline constexpr bool ParallelHeatSolver::isBottomRow()
+{
+    return _worldRank >= _worldSize - _decomposition.nx;
+}
+
+inline constexpr bool ParallelHeatSolver::isLeftColumn()
+{
+    return _topologyRank == 0;
+}
+
+inline constexpr bool ParallelHeatSolver::isRightColumn()
+{
+    return _topologyRank == _decomposition.nx - 1;
+}
+
+inline constexpr float ParallelHeatSolver::computePoint(
+    float tempNorthUpper, float tempNorthLower, float tempSouthLower, float tempSouthUpper, 
+    float tempWestLeft, float tempWestRight, float tempEastRight, float tempEastLeft, 
+    float tempCenter,
+    float domainParamNorthUpper, float domainParamNorthLower, float domainParamSouthLower, float domainParamSouthUpper,
+    float domainParamWestLeft, float domainParamWestRight, float domainParamEastRight, float domainParamEastLeft, 
+    float domainParamCenter,
+    int domainMapCenter
+)
+{
+    return 42;
+}
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */
