@@ -233,7 +233,7 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     /**********************************************************************************************************************/
 
     // unpack data into separate pointers for easier access
-    // temperature
+    // temperature halo zones
     float *tempNorthUpperCurrentHaloZone = _tempHaloZones[current].data();
     float *tempNorthLowerCurrentHaloZone = _tempHaloZones[current].data() + _edgeSizes.localWidth;
     float *tempSouthUpperCurrentHaloZone = _tempHaloZones[current].data() + _offsets.northSouthHalo;
@@ -250,7 +250,14 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     pair<float, float> *tempWestNextHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo);
     pair<float, float> *tempEastNextHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
 
-    // domain parameters
+    // temperature tiles
+    float *tempTileCurrent = _tempTiles[current].data();
+    float *tempTileSouthUpper = _tempTiles[current].data() + _edgeSizes.localWidth;
+    float *tempTileSouthLower = _tempTiles[current].data() + _offsets.northSouthHalo;
+    float *tempTileNorthUpper = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
+    float *tempTileNorthLower = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
+
+    // domain parameters halo zones
     float *domainParamsNorthUpperHaloZone = _domainParamsHaloZone.data();
     float *domainParamsNorthLowerHaloZone = _domainParamsHaloZone.data() + _edgeSizes.localWidth;
     float *domainParamsSouthUpperHaloZone = _domainParamsHaloZone.data() + _offsets.northSouthHalo;
@@ -259,20 +266,27 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     pair<float, float> *domainParamsWestHaloZones = static_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _offsets.northSouthHalo);
     pair<float, float> *domainParamsEastHaloZones = static_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
 
-    // domain map
-    int *domainMapNorthUpperHaloZone = _domainMapHaloZone.data();
-    int *domainMapNorthLowerHaloZone = _domainMapHaloZone.data() + _edgeSizes.localWidth;
-    int *domainMapSouthUpperHaloZone = _domainMapHaloZone.data() + _offsets.northSouthHalo;
-    int *domainMapSouthLowerHaloZone = _domainMapHaloZone.data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+    // domain parameters tiles
+    float *domainParamsTile = _domainParamsTile.data();
+    float *domainParamsTileSouthUpper = _domainParamsTile.data() + _edgeSizes.localWidth;
+    float *domainParamsTileSouthLower = _domainParamsTile.data() + _offsets.northSouthHalo;
+    float *domainParamsTileNorthUpper = _domainParamsTile.data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
+    float *domainParamsTileNorthLower = _domainParamsTile.data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
 
-    pair<int, int> *domainMapWestHaloZones = static_cast<pair<int, int> *>(_domainMapHaloZone.data() + 2 * _offsets.northSouthHalo);
-    pair<int, int> *domainMapEastHaloZones = static_cast<pair<int, int> *>(_domainMapHaloZone.data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
+    // domain map
+    int *domainMapTile = _domainMapTile.data();
 
     // left upper corner
     if (!isTopRow() && !isLeftColumn())
     {
-        //_tempTiles[next][0] = northUpperNextHaloZone[0] = computePoint()
-    }
+        _tempTiles[next][0] = northUpperNextHaloZone[0] = computePoint(
+            tempNorthUpperCurrentHaloZone[0], tempNorthLowerCurrentHaloZone[0], tempTileSouthLower[0], tempTileSouthUpper[0],
+            tempWestCurrentHaloZones[0].first, tempWestCurrentHaloZones[0].second, tempTileCurrent[1], tempTileCurrent[2], tempTileCurrent[0], 
+            domainParamsNorthUpperHaloZone[0], domainParamsNorthLowerHaloZone[0], domainParamsTileSouthLower[0], domainParamsTileSouthUpper[0],
+            domainParamsWestHaloZones[0].first, domainParamsWestHaloZones[0].second, domainParamsTile[1], domainParamsTile[2], domainParamsTile[0],
+            domainMapTile[0] 
+        );
+                                                                       
 }
 
 void ParallelHeatSolver::startHaloExchangeP2P(float *localData, std::array<MPI_Request, 8> &requests)

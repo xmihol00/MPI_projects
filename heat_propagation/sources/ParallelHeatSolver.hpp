@@ -301,7 +301,7 @@ private:
     std::vector<int, AlignedAllocator<int>> _domainMapHaloZone;
 
     std::vector<float, AlignedAllocator<float>> _initialScatterTemp;
-    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
+    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams; // TODO remove
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
 
     // parameters for all to all gather
