@@ -82,12 +82,15 @@ void ParallelHeatSolver::initGridTopology()
     /**********************************************************************************************************************/
 
     MPI_Cart_create(MPI_COMM_WORLD, 2, array<int, 2>{_decomposition.ny, _decomposition.nx}.data(), array<int, 2>{false, false}.data(), 0, &_topologyComm);
+    MPI_Comm_set_name(_topologyComm, "Topology Communicator");
+
     MPI_Comm_rank(_topologyComm, &_topologyRank);
 
     int middleColumn = _decomposition.nx >> 1;
     if (_worldRank % _decomposition.nx == middleColumn) // middle column 
     {
         MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / _decomposition.nx, &_middleColComm);
+        MPI_Comm_set_name(_topologyComm, "Middle Column Communicator");
     }
     else // other columns
     {
@@ -120,6 +123,7 @@ void ParallelHeatSolver::initDataDistribution()
         if (_worldRank % _decomposition.nx == 0) // first columns
         {
             MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / _decomposition.nx, &_initialScatterColComm);
+            MPI_Comm_set_name(_initialScatterColComm, "Initial Scatter Column Communicator");
         }
         else // other columns
         {
@@ -133,6 +137,7 @@ void ParallelHeatSolver::initDataDistribution()
     }
 
     MPI_Comm_split(MPI_COMM_WORLD, _worldRank / _decomposition.nx, _worldRank % _decomposition.nx, &_initialScatterRowComm);
+    MPI_Comm_set_name(_initialScatterRowComm, "Initial Scatter Row Communicator");
 }
 
 void ParallelHeatSolver::deinitDataDistribution()
@@ -232,30 +237,40 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     /*                             TAKE CARE NOT TO COMPUTE THE SAME AREAS TWICE                                          */
     /**********************************************************************************************************************/
 
-    // unpack data into separate pointers for easier access
-    // temperature halo zones
-    float *tempNorthUpperCurrentHaloZone = _tempHaloZones[current].data();
-    float *tempNorthLowerCurrentHaloZone = _tempHaloZones[current].data() + _edgeSizes.localWidth;
-    float *tempSouthUpperCurrentHaloZone = _tempHaloZones[current].data() + _offsets.northSouthHalo;
-    float *tempSouthLowerCurrentHaloZone = _tempHaloZones[current].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+    // unpack data into separate pointers for easier access, simulate the complete tile with halo zones
+    // temperature
+    float *tempTopRow0Current = _tempHaloZones[current].data(); // closest to the top
+    float *tempTopRow1Current = _tempHaloZones[current].data() + _edgeSizes.localWidth;
+    float *tempTopRow2Current = _tempTiles[current].data();
+    float *tempTopRow3Current = _tempTiles[current].data() + _edgeSizes.localWidth;
+    float *tempTopRow4Current = _tempTiles[current].data() + _offsets.northSouthHalo;
+    float *tempTopRow5Current = _tempTiles[current].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
 
-    pair<float, float> *tempWestCurrentHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[current].data() + 2 * _offsets.northSouthHalo);
-    pair<float, float> *tempEastCurrentHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[current].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
+    float *tempBotRow5Current = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - 2 * _offsets.northSouthHalo;
+    float *tempBotRow4Current = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo - _edgeSizes.localWidth;
+    float *tempBotRow3Current = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
+    float *tempBotRow2Current = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
+    float *tempBotRow1Current = _tempHaloZones[current].data() + _offsets.northSouthHalo;
+    float *tempBotRow0Current = _tempHaloZones[current].data() + _offsets.northSouthHalo + _edgeSizes.localWidth; // closest to the bottom
 
-    float *tempNorthUpperNextHaloZone = _tempHaloZones[next].data();
-    float *tempNorthLowerNextHaloZone = _tempHaloZones[next].data() + _edgeSizes.localWidth;
-    float *tempSouthUpperNextHaloZone = _tempHaloZones[next].data() + _offsets.northSouthHalo;
-    float *tempSouthLowerNextHaloZone = _tempHaloZones[next].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+    pair<float, float> *tempWestHaloZoneCurrent = static_cast<pair<float, float> *>(_tempHaloZones[current].data() + 2 * _offsets.northSouthHalo);
+    pair<float, float> *tempEastHaloZoneCurrent = static_cast<pair<float, float> *>(_tempHaloZones[current].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
 
-    pair<float, float> *tempWestNextHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo);
-    pair<float, float> *tempEastNextHaloZones = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
+    float *tempHaloTopRow0Next = _tempHaloZones[next].data();
+    float *tempHaloTopRow1Next = _tempHaloZones[next].data() + _edgeSizes.localWidth;
+    float *tempTileTopRow0Next = _tempTiles[next].data();
+    float *tempTileTopRow1Next = _tempTiles[next].data() + _edgeSizes.localWidth;
 
-    // temperature tiles
-    float *tempTileCurrent = _tempTiles[current].data();
-    float *tempTileSouthUpper = _tempTiles[current].data() + _edgeSizes.localWidth;
-    float *tempTileSouthLower = _tempTiles[current].data() + _offsets.northSouthHalo;
-    float *tempTileNorthUpper = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
-    float *tempTileNorthLower = _tempTiles[current].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
+    float *tempHaloBotRow0Next = _tempHaloZones[next].data() + _offsets.northSouthHalo;
+    float *tempHaloBotRow1Next = _tempHaloZones[next].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+    float *tempTileBotRow0Next = _tempTiles[next].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
+    float *tempTileBotRow1Next = _tempTiles[next].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
+
+    pair<float, float> *tempWestHaloZoneNext = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo);
+    pair<float, float> *tempEastHaloZoneNext = static_cast<pair<float, float> *>(_tempHaloZones[next].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
+
+    float *tempCurrentTile = _tempTiles[current].data();
+    float *tempNextTile = _tempTiles[next].data();
 
     // domain parameters halo zones
     float *domainParamsNorthUpperHaloZone = _domainParamsHaloZone.data();
@@ -277,16 +292,77 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     int *domainMapTile = _domainMapTile.data();
 
     // left upper corner
-    if (!isTopRow() && !isLeftColumn())
+    if (!isTopRow() && !isLeftColumn()) // node is not in the top row and not in the left column
     {
-        _tempTiles[next][0] = northUpperNextHaloZone[0] = computePoint(
-            tempNorthUpperCurrentHaloZone[0], tempNorthLowerCurrentHaloZone[0], tempTileSouthLower[0], tempTileSouthUpper[0],
-            tempWestCurrentHaloZones[0].first, tempWestCurrentHaloZones[0].second, tempTileCurrent[1], tempTileCurrent[2], tempTileCurrent[0], 
-            domainParamsNorthUpperHaloZone[0], domainParamsNorthLowerHaloZone[0], domainParamsTileSouthLower[0], domainParamsTileSouthUpper[0],
-            domainParamsWestHaloZones[0].first, domainParamsWestHaloZones[0].second, domainParamsTile[1], domainParamsTile[2], domainParamsTile[0],
-            domainMapTile[0] 
-        );
-                                                                       
+        tempHaloTopRow0Next[0] = tempTileTopRow0Next[0] = computePoint();
+        tempHaloTopRow0Next[1] = tempTileTopRow0Next[1] = computePoint();
+
+        tempHaloTopRow1Next[0] = tempTileTopRow1Next[0] = computePoint();
+        tempHaloTopRow1Next[1] = tempTileTopRow1Next[1] = computePoint();
+    }
+
+    // top row
+    if (!isTopRow()) // node is not in the top row
+    {
+        for (size_t i = 2; i < _edgeSizes.localWidth - 2; i++)
+        {
+            tempHaloTopRow0Next[i] = tempTileTopRow0Next[i] = computePoint();
+            tempHaloTopRow1Next[i] = tempTileTopRow1Next[i] = computePoint();
+        }
+    }
+
+    // right upper corner
+    if (!isTopRow() && !isRightColumn()) // node is not in the top row and not in the right column
+    {
+        tempHaloTopRow0Next[_edgeSizes.localWidth - 2] = tempTileTopRow0Next[_edgeSizes.localWidth - 2] = computePoint();
+        tempHaloTopRow0Next[_edgeSizes.localWidth - 1] = tempTileTopRow0Next[_edgeSizes.localWidth - 1] = computePoint();
+
+        tempHaloTopRow1Next[_edgeSizes.localWidth - 2] = tempTileTopRow1Next[_edgeSizes.localWidth - 2] = computePoint();
+        tempHaloTopRow1Next[_edgeSizes.localWidth - 1] = tempTileTopRow1Next[_edgeSizes.localWidth - 1] = computePoint();
+    }
+
+    // columns
+    if (!isLeftColumn()) // node is not in the left column
+    {
+        for (size_t i = 2; i < _edgeSizes.localHeight - 2; i++)
+        {
+            tempWestHaloZoneNext[i].first = tempNextTile[i * _edgeSizes.localWidth] = computePoint();
+            tempWestHaloZoneNext[i].second = tempNextTile[i * _edgeSizes.localWidth + 1] = computePoint();
+
+            tempEastHaloZoneNext[i].first = tempNextTile[i * _edgeSizes.localWidth + _edgeSizes.localWidth - 2] = computePoint();
+            tempEastHaloZoneNext[i].second = tempNextTile[i * _edgeSizes.localWidth + _edgeSizes.localWidth - 1] = computePoint();
+        }
+    }
+
+    // left lower corner
+    if (!isBottomRow() && !isLeftColumn()) // node is not in the bottom row and not in the left column
+    {
+        tempHaloBotRow0Next[0] = tempTileBotRow0Next[0] = computePoint();
+        tempHaloBotRow0Next[1] = tempTileBotRow0Next[1] = computePoint();
+
+        tempHaloBotRow1Next[0] = tempTileBotRow1Next[0] = computePoint();
+        tempHaloBotRow1Next[1] = tempTileBotRow1Next[1] = computePoint();
+    }
+
+    // bottom row
+    if (!isBottomRow()) // node is not in the bottom row
+    {
+        for (size_t i = 2; i < _edgeSizes.localWidth - 2; i++)
+        {
+            tempHaloBotRow0Next[i] = tempTileBotRow0Next[i] = computePoint();
+            tempHaloBotRow1Next[i] = tempTileBotRow1Next[i] = computePoint();
+        }
+    }
+
+    // right lower corner
+    if (!isBottomRow() && !isRightColumn()) // node is not in the bottom row and not in the right column
+    {
+        tempHaloBotRow0Next[_edgeSizes.localWidth - 2] = tempTileBotRow0Next[_edgeSizes.localWidth - 2] = computePoint();
+        tempHaloBotRow0Next[_edgeSizes.localWidth - 1] = tempTileBotRow0Next[_edgeSizes.localWidth - 1] = computePoint();
+
+        tempHaloBotRow1Next[_edgeSizes.localWidth - 2] = tempTileBotRow1Next[_edgeSizes.localWidth - 2] = computePoint();
+        tempHaloBotRow1Next[_edgeSizes.localWidth - 1] = tempTileBotRow1Next[_edgeSizes.localWidth - 1] = computePoint();
+    }
 }
 
 void ParallelHeatSolver::startHaloExchangeP2P(float *localData, std::array<MPI_Request, 8> &requests)
