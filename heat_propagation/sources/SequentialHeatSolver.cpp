@@ -88,7 +88,7 @@ void SequentialHeatSolver::run(std::vector<float, AlignedAllocator<float>>& outR
     }
 
     // print the current working array
-    if (iter == 1)
+    if (iter == 900)
     {
       std::cout << std::setprecision(7) << fixed;
       std::cout << std::setw(9);

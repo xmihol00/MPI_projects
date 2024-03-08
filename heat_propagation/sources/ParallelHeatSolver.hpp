@@ -344,6 +344,7 @@ private:
         {
             if (_worldRank == rank)
             {
+                std::cerr << std::setprecision(7) << std::fixed;
                 std::cerr << "Rank " << _worldRank << " domain map:" << std::endl;
                 for (int i = 0; i < _edgeSizes.localHeight; i++)
                 {
@@ -365,6 +366,7 @@ private:
         {
             if (_worldRank == rank)
             {
+                std::cerr << std::setprecision(7) << std::fixed;
                 std::cerr << "Rank " << _worldRank << " halo:" << std::endl;
                 for (int i = 0; i < 2; i++)
                 {
@@ -453,11 +455,10 @@ inline constexpr float ParallelHeatSolver::computePoint(
         std::cerr << _worldRank << " - domainMapCenter: " << domainMapCenter << std::endl;
     }
 
-    //const float frac = 1.0f / (
-    //    domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
-    //    domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
-    //);
-    const float frac = 1.0f / 32.0f;
+    const float frac = 1.0f / (
+        domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
+        domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
+    );
 
     float pointTemp = frac * (
         tempNorthUpper * domainParamNorthUpper + 
@@ -473,8 +474,7 @@ inline constexpr float ParallelHeatSolver::computePoint(
 
     if (domainMapCenter == 0)
     {
-        //pointTemp = _simulationHyperParams.airFlowRate * _simulationHyperParams.coolerTemp + (1.0f - _simulationHyperParams.airFlowRate) * pointTemp;
-        pointTemp = 0.5f*pointTemp;
+        pointTemp = _simulationHyperParams.airFlowRate * _simulationHyperParams.coolerTemp + (1.0f - _simulationHyperParams.airFlowRate) * pointTemp;
     }
 
     return pointTemp;
