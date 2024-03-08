@@ -64,7 +64,8 @@ ParallelHeatSolver::~ParallelHeatSolver()
     /*                                             (should be in reverse order)                                           */
     /**********************************************************************************************************************/
 
-    deinitGridTopology();
+    deinitDataDistribution();
+    deinitGridTopology();   
 }
 
 string_view ParallelHeatSolver::getCodeType() const
@@ -74,16 +75,14 @@ string_view ParallelHeatSolver::getCodeType() const
 
 void ParallelHeatSolver::initGridTopology()
 {
-    /**********************************************************************************************************************/
-    /*                          Initialize 2D grid topology using non-periodic MPI Cartesian topology.                    */
-    /*                       Also create a communicator for middle column average temperature computation.                */
-    /**********************************************************************************************************************/
-
+    // 2D grid topology without periodicity
     MPI_Cart_create(MPI_COMM_WORLD, 2, array<int, 2>{_decomposition.ny, _decomposition.nx}.data(), array<int, 2>{false, false}.data(), 0, &_topologyComm);
     MPI_Comm_set_name(_topologyComm, "Topology Communicator");
 
-    int middleColumn = _decomposition.nx >> 1;
-    if (_worldRank % _decomposition.nx == middleColumn) // middle column
+    // there is always an even number of columns, therefore there are two middle columns (the computation is symmetric), 
+    // in this case the right middle colum is used (left most column in tiles of the right middle column of nodes)
+    int middleColModulo = _decomposition.nx >> 1;
+    if (_worldRank % _decomposition.nx == middleColModulo) // right middle column nodes
     {
         MPI_Comm_split(MPI_COMM_WORLD, 0, _worldRank / _decomposition.nx, &_midColComm);
         MPI_Comm_set_name(_midColComm, "Middle Column Communicator");
@@ -98,10 +97,6 @@ void ParallelHeatSolver::initGridTopology()
 
 void ParallelHeatSolver::deinitGridTopology()
 {
-    /**********************************************************************************************************************/
-    /*      Deinitialize 2D grid topology and the middle column average temperature computation communicator              */
-    /**********************************************************************************************************************/
-
     MPI_Comm_free(&_topologyComm);
     if (_midColComm != MPI_COMM_NULL)
     {
@@ -111,10 +106,6 @@ void ParallelHeatSolver::deinitGridTopology()
 
 void ParallelHeatSolver::initDataDistribution()
 {
-    /**********************************************************************************************************************/
-    /*                 Initialize variables and MPI datatypes for data distribution (float and int).                      */
-    /**********************************************************************************************************************/
-
     if (_decomposition.ny > 1)
     {
         if (_worldRank % _decomposition.nx == 0) // first columns
@@ -140,9 +131,6 @@ void ParallelHeatSolver::initDataDistribution()
 
 void ParallelHeatSolver::deinitDataDistribution()
 {
-    /**********************************************************************************************************************/
-    /*                       Deinitialize variables and MPI datatypes for data distribution.                              */
-    /**********************************************************************************************************************/
     if (_decomposition.ny > 1 && _scatterGatherColComm != MPI_COMM_NULL)
     {
         MPI_Comm_free(&_scatterGatherColComm);
@@ -152,11 +140,6 @@ void ParallelHeatSolver::deinitDataDistribution()
 
 void ParallelHeatSolver::allocLocalTiles()
 {
-    /**********************************************************************************************************************/
-    /*            Allocate local tiles for domain map (1x), domain parameters (1x) and domain temperature (2x).           */
-    /*                                               Use AlignedAllocator.                                                */
-    /**********************************************************************************************************************/
-
     _tempTiles[0].resize(_edgeSizes.localWidth * _edgeSizes.localHeight);
     _tempTiles[1].resize(_edgeSizes.localWidth * _edgeSizes.localHeight);
     _domainParamsTile.resize(_edgeSizes.localWidth * _edgeSizes.localHeight);
@@ -175,64 +158,8 @@ void ParallelHeatSolver::allocLocalTiles()
     }
 }
 
-void ParallelHeatSolver::deallocLocalTiles()
+void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
 {
-    /**********************************************************************************************************************/
-    /*                                   Deallocate local tiles (may be empty).                                           */
-    /**********************************************************************************************************************/
-}
-
-void ParallelHeatSolver::initHaloExchange()
-{
-    /**********************************************************************************************************************/
-    /*                            Initialize variables and MPI datatypes for halo exchange.                               */
-    /*                    If mSimulationProps.isRunParallelRMA() flag is set to true, create RMA windows.                 */
-    /**********************************************************************************************************************/
-}
-
-void ParallelHeatSolver::deinitHaloExchange()
-{
-    /**********************************************************************************************************************/
-    /*                            Deinitialize variables and MPI datatypes for halo exchange.                             */
-    /**********************************************************************************************************************/
-}
-
-template <typename T>
-void ParallelHeatSolver::scatterTiles(const T *globalData, T *localData)
-{
-    static_assert(is_same_v<T, int> || is_same_v<T, float>, "Unsupported scatter datatype!");
-
-    /**********************************************************************************************************************/
-    /*                      Implement master's global tile scatter to each rank's local tile.                             */
-    /*     The template T parameter is restricted to int or float type. You can choose the correct MPI datatype like:     */
-    /*                                                                                                                    */
-    /*  const MPI_Datatype globalTileType = is_same_v<T, int> ? globalFloatTileType : globalIntTileType;             */
-    /*  const MPI_Datatype localTileType  = is_same_v<T, int> ? localIntTileType    : localfloatTileType;            */
-    /**********************************************************************************************************************/
-}
-
-template <typename T>
-void ParallelHeatSolver::gatherTiles(const T *localData, T *globalData)
-{
-    static_assert(is_same_v<T, int> || is_same_v<T, float>, "Unsupported gather datatype!");
-
-    /**********************************************************************************************************************/
-    /*                      Implement each rank's local tile gather to master's rank global tile.                         */
-    /*     The template T parameter is restricted to int or float type. You can choose the correct MPI datatype like:     */
-    /*                                                                                                                    */
-    /*  const MPI_Datatype localTileType  = is_same_v<T, int> ? localIntTileType    : localfloatTileType;            */
-    /*  const MPI_Datatype globalTileType = is_same_v<T, int> ? globalFloatTileType : globalIntTileType;             */
-    /**********************************************************************************************************************/
-}
-
-void ParallelHeatSolver::computeHaloZones(bool current, bool next)
-{
-    /**********************************************************************************************************************/
-    /*  Compute new temperatures in halo zones, so that copy operations can be overlapped with inner region computation.  */
-    /*                        Use updateTile method to compute new temperatures in halo zones.                            */
-    /*                             TAKE CARE NOT TO COMPUTE THE SAME AREAS TWICE                                          */
-    /**********************************************************************************************************************/
-
     // unpack data into separate pointers for easier access, simulate the complete tile with halo zones
     // temperature
     float *tempTopRow0Current = _tempHaloZones[0].data(); // closest to the top
@@ -249,19 +176,22 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     float *tempBotRow1Current = _tempHaloZones[0].data() + _offsets.northSouthHalo;
     float *tempBotRow0Current = _tempHaloZones[0].data() + _offsets.northSouthHalo + _edgeSizes.localWidth; // closest to the bottom
 
+    // cast to pairs for easier access
     pair<float, float> *tempWestHaloZoneCurrent = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _offsets.northSouthHalo);
     pair<float, float> *tempEastHaloZoneCurrent = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
 
-    float *tempHaloTopRow0Next = _tempHaloZones[1].data();
+    // rows to store results to
+    float *tempHaloTopRow0Next = _tempHaloZones[1].data(); // closest to the top
     float *tempHaloTopRow1Next = _tempHaloZones[1].data() + _edgeSizes.localWidth;
-    float *tempTileTopRow0Next = _tempTiles[next].data();
+    float *tempTileTopRow0Next = _tempTiles[next].data(); // closest to the top
     float *tempTileTopRow1Next = _tempTiles[next].data() + _edgeSizes.localWidth;
 
     float *tempHaloBotRow1Next = _tempHaloZones[1].data() + _offsets.northSouthHalo;
-    float *tempHaloBotRow0Next = _tempHaloZones[1].data() + _offsets.northSouthHalo + _edgeSizes.localWidth;
+    float *tempHaloBotRow0Next = _tempHaloZones[1].data() + _offsets.northSouthHalo + _edgeSizes.localWidth; // closest to the bottom
     float *tempTileBotRow1Next = _tempTiles[next].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _offsets.northSouthHalo;
-    float *tempTileBotRow0Next = _tempTiles[next].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth;
+    float *tempTileBotRow0Next = _tempTiles[next].data() + _edgeSizes.localHeight * _edgeSizes.localWidth - _edgeSizes.localWidth; // closest to the bottom
 
+    // columns to store results to (only halo zones)
     pair<float, float> *tempWestHaloZoneNext = reinterpret_cast<pair<float, float> *>(_tempHaloZones[1].data() + 2 * _offsets.northSouthHalo);
     pair<float, float> *tempEastHaloZoneNext = reinterpret_cast<pair<float, float> *>(_tempHaloZones[1].data() + 2 * _offsets.northSouthHalo + _offsets.westEastHalo);
 
@@ -544,7 +474,7 @@ void ParallelHeatSolver::computeHaloZones(bool current, bool next)
     }
 }
 
-void ParallelHeatSolver::computeTiles(bool current, bool next)
+void ParallelHeatSolver::computeTempTile(bool current, bool next)
 {
     float *tempCurrentTile = _tempTiles[current].data();
     float *tempNextTile = _tempTiles[next].data();
@@ -565,7 +495,7 @@ void ParallelHeatSolver::computeTiles(bool current, bool next)
     }
 }
 
-void ParallelHeatSolver::computeMidColumnAverage(size_t iteration)
+void ParallelHeatSolver::computeAndPrintMidColAverageParallel(size_t iteration)
 {
     float sum = 0;
     pair<float, float> *tempWestHaloZoneNext = reinterpret_cast<pair<float, float> *>(_tempHaloZones[1].data() + 2 * _offsets.northSouthHalo);
@@ -585,13 +515,24 @@ void ParallelHeatSolver::computeMidColumnAverage(size_t iteration)
     }
 }
 
+void ParallelHeatSolver::computeAndPrintMidColAverageSequential(float timeElapsed, const vector<float, AlignedAllocator<float>> &outResult)
+{
+    if (_worldRank == 0)
+    {
+        float averageTemp = 0;
+        for (size_t i = 0; i < mMaterialProps.getEdgeSize(); i++)
+        {
+            averageTemp += outResult[i * mMaterialProps.getEdgeSize() + (mMaterialProps.getEdgeSize() >> 1)];
+        }
+        averageTemp /= mMaterialProps.getEdgeSize();
+
+        printFinalReport(timeElapsed, averageTemp);
+    }
+}
+
 void ParallelHeatSolver::startHaloExchangeP2P()
 {
-    /**********************************************************************************************************************/
-    /*                       Start the non-blocking halo zones exchange using P2P communication.                          */
-    /*                         Use the requests array to return the requests from the function.                           */
-    /*                            Don't forget to set the empty requests to MPI_REQUEST_NULL.                             */
-    /**********************************************************************************************************************/
+    // leverage the created 2D topology to exchange the halo zones
     MPI_Ineighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts, _displacements, MPI_FLOAT,
                             _tempHaloZones[0].data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm, &_haloExchangeRequest);
 }
@@ -665,16 +606,19 @@ void ParallelHeatSolver::scatterInitialData()
         MPI_Scatter(scatteredDomainMapRow + i, _edgeSizes.localWidth, MPI_INT,
                     _domainMapTile.data() + j, _edgeSizes.localWidth, MPI_INT, 0, _scatterGatherRowComm);
     }
+
+    // copy initial temperature to the second buffer
+    copy(_tempTiles[0].begin(), _tempTiles[0].end(), _tempTiles[1].begin());
 }
 
-void ParallelHeatSolver::gatherComputedData(bool final)
+void ParallelHeatSolver::gatherComputedTempData(bool final, vector<float, AlignedAllocator<float>> &outResult)
 {
     if (_worldRank == 0)
     {
-        _finalTemp.resize(_edgeSizes.global * _edgeSizes.global);
+        outResult.resize(_edgeSizes.global * _edgeSizes.global);
     }
 
-    float *rowTemp = _finalTemp.data();
+    float *rowTemp = outResult.data();
     if (_scatterGatherColComm != MPI_COMM_NULL)
     {
         rowTemp = _scatterGatherTempRow.data();
@@ -691,7 +635,7 @@ void ParallelHeatSolver::gatherComputedData(bool final)
     if (_scatterGatherColComm != MPI_COMM_NULL)
     {
         MPI_Gather(_scatterGatherTempRow.data(), _edgeSizes.global * _edgeSizes.localHeight, MPI_FLOAT,
-                   _finalTemp.data(), _edgeSizes.global * _edgeSizes.localHeight, MPI_FLOAT, 0, _scatterGatherColComm);
+                   outResult.data(), _edgeSizes.global * _edgeSizes.localHeight, MPI_FLOAT, 0, _scatterGatherColComm);
     }
 }
 
@@ -739,44 +683,14 @@ void ParallelHeatSolver::exchangeInitialHaloZones()
 
 void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 {
-#if MANIPULATE_TEMP
-    const float *scatteredTempRow = mMaterialProps.getInitialTemperature().data();
-    if (_worldRank == 0)
-    {
-        for (int i = 0; i < _edgeSizes.global; i++)
-        {
-            for (int j = 0; j < _edgeSizes.global; j++)
-            {
-                ((float *)((size_t)(&scatteredTempRow[i * _edgeSizes.global + j])))[0] = (j * 4) / _edgeSizes.global + (i / 2 + 5) * 20;
-                cerr << scatteredTempRow[i * _edgeSizes.global + j] << " ";
-            }
-            cerr << endl;
-        }
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-#endif
-
-#if (PRINT_DEBUG && false)
-    if (_worldRank == 0)
-    {
-        cerr << "Initial domain params: " << endl;
-        for (int i = 0; i < _edgeSizes.global; i++)
-        {
-            for (int j = 0; j < _edgeSizes.global; j++)
-            {
-                cerr << mMaterialProps.getDomainParameters()[i * _edgeSizes.global + j] << " ";
-            }
-            cerr << endl;
-        }
-    }
-#endif
-
+    // scatter the initial data across the nodes from the root node
     scatterInitialData();
-    prepareInitialHaloZones();
-    exchangeInitialHaloZones();
 
-    // copy initial temperature to the second buffer
-    copy(_tempTiles[0].begin(), _tempTiles[0].end(), _tempTiles[1].begin());
+    // prepare the halo zone, i.e. copy the initial data to the halo zones
+    prepareInitialHaloZones();
+
+    // perform the initial halo zone exchange (synchronous P2P communication)
+    exchangeInitialHaloZones();
 
     // deallocate no longer needed temporary buffers
     _domainParamsHaloZoneTmp.resize(0);
@@ -785,27 +699,23 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
     double startTime = MPI_Wtime();
 
-    // 3. Start main iterative simulation loop.
-    for (size_t iter = 0; iter < mSimulationProps.getNumIterations(); ++iter)
+    // run the simulation
+    for (size_t iter = 0; iter < mSimulationProps.getNumIterations(); iter++)
     {
         const bool current = iter & 1;
         const bool next = !current;
 
-        /**********************************************************************************************************************/
-        /*                            Compute and exchange halo zones using P2P or RMA.                                       */
-        /**********************************************************************************************************************/
-        computeHaloZones(current, next);
+        // compute temperature halo zones (and the two most outer rows and columns of the tile)
+        computeTempHaloZones(current, next);
+
+        // start the halo zone exchange (async P2P communication)
         startHaloExchangeP2P();
-        computeTiles(current, next);
+
+        // compute the rest of the tile (inner part)
+        computeTempTile(current, next);
+
+        // wait for all halo zone exchanges to finalize
         awaitHaloExchangeP2P();
-
-        /**********************************************************************************************************************/
-        /*                           Compute the rest of the tile. Use updateTile method.                                     */
-        /**********************************************************************************************************************/
-
-        /**********************************************************************************************************************/
-        /*                            Wait for all halo zone exchanges to finalize.                                           */
-        /**********************************************************************************************************************/
 
         if (shouldStoreData(iter))
         {
@@ -816,51 +726,17 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
         if (shouldPrintProgress(iter) && shouldComputeMiddleColumnAverageTemperature())
         {
-            /**********************************************************************************************************************/
-            /*                 Compute and print middle column average temperature and print progress report.                     */
-            /**********************************************************************************************************************/
-            computeMidColumnAverage(iter);
+            // compute and print the middle column average temperature using reduction of partial averages
+            computeAndPrintMidColAverageParallel(iter);
         }
     }
-
     double elapsedTime = MPI_Wtime() - startTime;
 
-    /**********************************************************************************************************************/
-    /*                                     Gather final domain temperature.                                               */
-    /**********************************************************************************************************************/
-    gatherComputedData(mSimulationProps.getNumIterations() & 1);
+    // retrieve the final temperature from all the nodes to a single matrix
+    gatherComputedTempData(mSimulationProps.getNumIterations() & 1, outResult);
 
-#if PRINT_DEBUG
-    if (_worldRank == 0)
-    {
-        cout << setprecision(7) << fixed;
-        cout << setw(9);
-
-        for (size_t i = 0; i < mMaterialProps.getEdgeSize(); ++i)
-        {
-            for (size_t j = 0; j < mMaterialProps.getEdgeSize(); ++j)
-            {
-                cout << _finalTemp[i * mMaterialProps.getEdgeSize() + j] << " ";
-            }
-            cout << endl;
-        }
-    }
-#endif
-
-    /**********************************************************************************************************************/
-    /*           Compute (sequentially) and report final middle column temperature average and print final report.        */
-    /**********************************************************************************************************************/
-    if (_worldRank == 0)
-    {
-        float averageTemp = 0;
-        for (size_t i = 0; i < mMaterialProps.getEdgeSize(); i++)
-        {
-            averageTemp += _finalTemp[i * mMaterialProps.getEdgeSize() + (mMaterialProps.getEdgeSize() >> 1)];
-        }
-        averageTemp /= mMaterialProps.getEdgeSize();
-
-        printFinalReport(elapsedTime, averageTemp);
-    }
+    // compute the final average temperature and print the final report
+    computeAndPrintMidColAverageSequential(elapsedTime, outResult);
 }
 
 bool ParallelHeatSolver::shouldComputeMiddleColumnAverageTemperature() const
@@ -870,26 +746,6 @@ bool ParallelHeatSolver::shouldComputeMiddleColumnAverageTemperature() const
     /**********************************************************************************************************************/
 
     return _midColComm != MPI_COMM_NULL;
-}
-
-float ParallelHeatSolver::computeMiddleColumnAverageTemperatureParallel(const float *localData) const
-{
-    /**********************************************************************************************************************/
-    /*                  Implement parallel middle column average temperature computation.                                 */
-    /*                      Use OpenMP directives to accelerate the local computations.                                   */
-    /**********************************************************************************************************************/
-
-    return 0.f;
-}
-
-float ParallelHeatSolver::computeMiddleColumnAverageTemperatureSequential(const float *globalData) const
-{
-    /**********************************************************************************************************************/
-    /*                  Implement sequential middle column average temperature computation.                               */
-    /*                      Use OpenMP directives to accelerate the local computations.                                   */
-    /**********************************************************************************************************************/
-
-    return 0.f;
 }
 
 void ParallelHeatSolver::openOutputFileSequential()

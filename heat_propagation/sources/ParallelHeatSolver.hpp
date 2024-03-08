@@ -99,56 +99,33 @@ private:
     void allocLocalTiles();
 
     /**
-     * @brief Deallocate memory for local tiles.
-     */
-    void deallocLocalTiles();
-
-    /**
-     * @brief Initialize variables and MPI datatypes for halo exchange.
-     */
-    void initHaloExchange();
-
-    /**
-     * @brief Deinitialize variables and MPI datatypes for halo exchange.
-     */
-    void deinitHaloExchange();
-
-    /**
-     * @brief Scatter global data to local tiles.
-     * @tparam T Type of the data to be scattered. Must be either float or int.
-     * @param globalData Global data to be scattered.
-     * @param localData  Local data to be filled with scattered values.
-     */
-    template <typename T>
-    void scatterTiles(const T *globalData, T *localData);
-
-    /**
-     * @brief Gather local tiles to global data.
-     * @tparam T Type of the data to be gathered. Must be either float or int.
-     * @param localData  Local data to be gathered.
-     * @param globalData Global data to be filled with gathered values.
-     */
-    template <typename T>
-    void gatherTiles(const T *localData, T *globalData);
-
-    /**
      * @brief Compute temperature of the next iteration in the halo zones.
      * @param current index of the current temperature values.
      * @param next    index of the next temperature values.
      */
-    void computeHaloZones(bool current, bool next);
+    void computeTempHaloZones(bool current, bool next);
 
     /**
      * @brief Compute temperature of the next iteration in the local tiles.
      * @param current index of the current temperature values.
      * @param next    index of the next temperature values.
      */
-    void computeTiles(bool current, bool next);
+    void computeTempTile(bool current, bool next);
 
     /**
-     * @brief Compute the average temperature of the middle column per process and reduce it to the root.
+     * @brief Compute the average temperature of the middle column per process, 
+     *        reduce it to the middle column root and print progress report.
+     * @param iteration Current iteration number.
      */
-    void computeMidColumnAverage(size_t iteration);
+    void computeAndPrintMidColAverageParallel(size_t iteration);
+
+    /**
+     * @brief Compute the average temperature of the middle column in the final 
+     *        temperature data and print the final report.
+     * @param timeElapsed Time elapsed since the start of the simulation.
+     * @param outResult   Output array filled with final temperature data.
+     */
+    void computeAndPrintMidColAverageSequential(float timeElapsed, const std::vector<float, AlignedAllocator<float>> &outResult);
 
     /**
      * @brief Start halo exchange using point-to-point communication.
@@ -172,24 +149,6 @@ private:
      * @param window MPI_Win object to be used for RMA communication.
      */
     void awaitHaloExchangeRMA(MPI_Win window);
-
-    /**
-     * @brief Computes global average temperature of middle column across
-     *        processes in "mGridMiddleColComm" communicator.
-     *        NOTE: All ranks in the communicator *HAVE* to call this method.
-     * @param localData Data of the local tile.
-     * @return Returns average temperature over middle of all tiles in the communicator.
-     */
-    float computeMiddleColumnAverageTemperatureParallel(const float *localData) const;
-
-    /**
-     * @brief Computes global average temperature of middle column of the domain
-     *        using values collected to MASTER rank.
-     *        NOTE: Only single RANK needs to call this method.
-     * @param globalData Simulation state collected to the MASTER rank.
-     * @return Returns the average temperature.
-     */
-    float computeMiddleColumnAverageTemperatureSequential(const float *globalData) const;
 
     /**
      * @brief Opens output HDF5 file for sequential access by MASTER rank only.
@@ -232,7 +191,7 @@ private:
 
     void scatterInitialData();
 
-    void gatherComputedData(bool final);
+    void gatherComputedTempData(bool final, std::vector<float, AlignedAllocator<float>> &outResult);
 
     void prepareInitialHaloZones();
 
@@ -316,8 +275,6 @@ private:
     std::vector<float, AlignedAllocator<float>> _scatterGatherTempRow;
     std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
-
-    std::vector<float, AlignedAllocator<float>> _finalTemp;
 
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
