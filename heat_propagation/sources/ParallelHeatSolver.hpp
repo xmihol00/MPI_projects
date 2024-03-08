@@ -146,6 +146,11 @@ private:
     void computeTiles(bool current, bool next);
 
     /**
+     * @brief Compute the average temperature of the middle column per process and reduce it to the root.
+     */
+    void computeMidColumnAverage(size_t iteration);
+
+    /**
      * @brief Start halo exchange using point-to-point communication.
      */
     void startHaloExchangeP2P();
@@ -227,6 +232,8 @@ private:
 
     void scatterInitialData();
 
+    void gatherComputedData(bool final);
+
     void prepareInitialHaloZones();
 
     void exchangeInitialHaloZones();
@@ -258,6 +265,7 @@ private:
     /// @brief Process rank in the global communicator (MPI_COMM_WORLD).
     int _worldRank;
     int _rowRank;
+    int _midColRank;
 
     /// @brief Total number of processes in MPI_COMM_WORLD.
     int _worldSize;
@@ -266,9 +274,9 @@ private:
     Hdf5FileHandle mFileHandle{};
 
     MPI_Comm _topologyComm;
-    MPI_Comm _middleColComm;
-    MPI_Comm _initialScatterColComm;
-    MPI_Comm _initialScatterRowComm;
+    MPI_Comm _midColComm;
+    MPI_Comm _scatterGatherColComm;
+    MPI_Comm _scatterGatherRowComm;
 
     MPI_Request _haloExchangeRequest;
 
@@ -305,15 +313,17 @@ private:
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZoneTmp;
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZone;
 
-    std::vector<float, AlignedAllocator<float>> _initialScatterTemp;
+    std::vector<float, AlignedAllocator<float>> _scatterGatherTempRow;
     std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
+
+    std::vector<float, AlignedAllocator<float>> _finalTemp;
 
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
     int _displacements[4] = {0, };
 
-    #define PRINT_DEBUG 1
+    #define PRINT_DEBUG 0
     #define MANIPULATE_TEMP 0
 
     #if PRINT_DEBUG
@@ -431,30 +441,6 @@ inline constexpr float ParallelHeatSolver::computePoint(
     int domainMapCenter
 )
 {
-    if (_print)
-    {
-        // cerr all input parameters
-        std::cerr << _worldRank << " - tempNorthUpper: " << tempNorthUpper << std::endl;
-        std::cerr << _worldRank << " - tempNorthLower: " << tempNorthLower << std::endl;
-        std::cerr << _worldRank << " - tempSouthLower: " << tempSouthLower << std::endl;
-        std::cerr << _worldRank << " - tempSouthUpper: " << tempSouthUpper << std::endl;
-        std::cerr << _worldRank << " - tempWestLeft: " << tempWestLeft << std::endl;
-        std::cerr << _worldRank << " - tempWestRight: " << tempWestRight << std::endl;
-        std::cerr << _worldRank << " - tempEastRight: " << tempEastRight << std::endl;
-        std::cerr << _worldRank << " - tempEastLeft: " << tempEastLeft << std::endl;
-        std::cerr << _worldRank << " - tempCenter: " << tempCenter << std::endl;
-        std::cerr << _worldRank << " - domainParamNorthUpper: " << domainParamNorthUpper << std::endl;
-        std::cerr << _worldRank << " - domainParamNorthLower: " << domainParamNorthLower << std::endl;
-        std::cerr << _worldRank << " - domainParamSouthLower: " << domainParamSouthLower << std::endl;
-        std::cerr << _worldRank << " - domainParamSouthUpper: " << domainParamSouthUpper << std::endl;
-        std::cerr << _worldRank << " - domainParamWestLeft: " << domainParamWestLeft << std::endl;
-        std::cerr << _worldRank << " - domainParamWestRight: " << domainParamWestRight << std::endl;
-        std::cerr << _worldRank << " - domainParamEastRight: " << domainParamEastRight << std::endl;
-        std::cerr << _worldRank << " - domainParamEastLeft: " << domainParamEastLeft << std::endl;
-        std::cerr << _worldRank << " - domainParamCenter: " << domainParamCenter << std::endl;
-        std::cerr << _worldRank << " - domainMapCenter: " << domainMapCenter << std::endl;
-    }
-
     const float frac = 1.0f / (
         domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
         domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
