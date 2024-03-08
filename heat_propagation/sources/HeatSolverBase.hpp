@@ -201,11 +201,12 @@ inline constexpr void HeatSolverBase::computePoint(const float* oldTemp,
   const unsigned right[2]  = { center + 1, center + 2 };
 
   // 2. The reciprocal value of the sum of domain parameters for normalization.
-  const float frac = 1.0f / (params[top[0]]    + params[top[1]]    +
-                             params[bottom[0]] + params[bottom[1]] +
-                             params[left[0]]   + params[left[1]]   +
-                             params[right[0]]  + params[right[1]]  +
-                             params[center]);
+  //const float frac = 1.0f / (params[top[0]]    + params[top[1]]    +
+  //                           params[bottom[0]] + params[bottom[1]] +
+  //                           params[left[0]]   + params[left[1]]   +
+  //                           params[right[0]]  + params[right[1]]  +
+  //                           params[center]);
+  const float frac = 1.0f / 32.0f;                          
 
   // 3. Compute new temperature at the specified grid point.
   float pointTemp = oldTemp[top[0]]    * params[top[0]]    * frac +
@@ -220,7 +221,7 @@ inline constexpr void HeatSolverBase::computePoint(const float* oldTemp,
 
   // 4. Remove some of the heat due to air flow
   pointTemp = (map[center] == 0)
-                ? (airflowRate * coolerTemp) + ((1.0f - airflowRate) * pointTemp)
+                ? 0.5f*pointTemp //(airflowRate * coolerTemp) + ((1.0f - airflowRate) * pointTemp)
                 : pointTemp;
 
   newTemp[center] = pointTemp;

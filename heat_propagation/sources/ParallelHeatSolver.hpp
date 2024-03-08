@@ -23,6 +23,7 @@
 #include "AlignedAllocator.hpp"
 #include "Hdf5Handle.hpp"
 #include "HeatSolverBase.hpp"
+#include <iomanip>
 
 /**
  * @brief The ParallelHeatSolver class implements parallel MPI based heat
@@ -146,10 +147,8 @@ private:
 
     /**
      * @brief Start halo exchange using point-to-point communication.
-     * @param current Index of the current halo zone (to be received to).
-     * @param next    Index of the next halo zone (with newly computed values to be send).
      */
-    void startHaloExchangeP2P(bool current, bool next);
+    void startHaloExchangeP2P();
 
     /**
      * @brief Await halo exchange using point-to-point communication.
@@ -323,11 +322,34 @@ private:
             if (_worldRank == rank)
             {
                 std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
+                std::cerr << std::setprecision(7) << std::fixed;
+                std::cerr << std::setw(9);
                 for (int i = 0; i < _edgeSizes.localHeight; i++)
                 {
                     for (int j = 0; j < _edgeSizes.localWidth; j++)
                     {
                         std::cerr << _tempTiles[tile][i * _edgeSizes.localWidth + j] << " ";
+                    }
+                    std::cerr << std::endl;
+                }
+                std::cerr << std::endl;
+                std::cerr << std::flush;
+            }
+
+            std::cerr << std::flush;
+            MPI_Barrier(MPI_COMM_WORLD);
+        }
+
+        void printDomainMap(int rank)
+        {
+            if (_worldRank == rank)
+            {
+                std::cerr << "Rank " << _worldRank << " domain map:" << std::endl;
+                for (int i = 0; i < _edgeSizes.localHeight; i++)
+                {
+                    for (int j = 0; j < _edgeSizes.localWidth; j++)
+                    {
+                        std::cerr << _domainMapTile[i * _edgeSizes.localWidth + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -431,22 +453,28 @@ inline constexpr float ParallelHeatSolver::computePoint(
         std::cerr << _worldRank << " - domainMapCenter: " << domainMapCenter << std::endl;
     }
 
-    const float frac = 1.0f / (
-        domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
-        domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
-    );
+    //const float frac = 1.0f / (
+    //    domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
+    //    domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
+    //);
+    const float frac = 1.0f / 32.0f;
 
     float pointTemp = frac * (
-        tempNorthUpper * domainParamNorthUpper + tempNorthLower * domainParamNorthLower + 
-        tempSouthLower * domainParamSouthLower + tempSouthUpper * domainParamSouthUpper + 
-        tempWestLeft * domainParamWestLeft + tempWestRight * domainParamWestRight + 
-        tempEastRight * domainParamEastRight + tempEastLeft * domainParamEastLeft + 
+        tempNorthUpper * domainParamNorthUpper + 
+        tempNorthLower * domainParamNorthLower + 
+        tempSouthLower * domainParamSouthLower + 
+        tempSouthUpper * domainParamSouthUpper + 
+        tempWestLeft * domainParamWestLeft + 
+        tempWestRight * domainParamWestRight + 
+        tempEastRight * domainParamEastRight + 
+        tempEastLeft * domainParamEastLeft + 
         tempCenter * domainParamCenter
     );
 
     if (domainMapCenter == 0)
     {
-        pointTemp = _simulationHyperParams.airFlowRate * _simulationHyperParams.coolerTemp + (1.0f - _simulationHyperParams.airFlowRate) * pointTemp;
+        //pointTemp = _simulationHyperParams.airFlowRate * _simulationHyperParams.coolerTemp + (1.0f - _simulationHyperParams.airFlowRate) * pointTemp;
+        pointTemp = 0.5f*pointTemp;
     }
 
     return pointTemp;

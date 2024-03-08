@@ -12,6 +12,7 @@
         "iostream": "cpp",
         "mutex": "cpp",
         "streambuf": "cpp",
-        "cmath": "cpp"
+        "cmath": "cpp",
+        "iomanip": "cpp"
     }
 }

@@ -56,6 +56,18 @@ void SequentialHeatSolver::run(std::vector<float, AlignedAllocator<float>>& outR
   const float airflowRate = mSimulationProps.getAirflowRate();
   const float coolerTemp  = mMaterialProps.getCoolerTemperature();
 
+  // print domain map
+  //std::cout << std::setprecision(7) << fixed;
+  //for (std::size_t i = 0; i < mMaterialProps.getEdgeSize(); ++i)
+  //{
+  //  for (std::size_t j = 0; j < mMaterialProps.getEdgeSize(); ++j)
+  //  {
+  //    std::cout << mMaterialProps.getDomainMap()[i * mMaterialProps.getEdgeSize() + j] << " ";
+  //  }
+  //  std::cout << std::endl;
+  //}
+  //exit(0);
+
   // 3. Begin iterative simulation main loop
   for(std::size_t iter = 0; iter < mSimulationProps.getNumIterations(); ++iter)
   {
@@ -76,8 +88,11 @@ void SequentialHeatSolver::run(std::vector<float, AlignedAllocator<float>>& outR
     }
 
     // print the current working array
-    if (iter == 2)
+    if (iter == 1)
     {
+      std::cout << std::setprecision(7) << fixed;
+      std::cout << std::setw(9);
+
       for (std::size_t i = 0; i < mMaterialProps.getEdgeSize(); ++i)
       {
         for (std::size_t j = 0; j < mMaterialProps.getEdgeSize(); ++j)
