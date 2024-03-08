@@ -229,39 +229,64 @@ void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
     // left upper corner
     if (!isTopRow() && !isLeftColumn()) // node is not in the top row and not in the left column
     {
-        tempWestHaloZoneNext[0].first = tempHaloTopRow0Next[0] = tempTileTopRow0Next[0] = computePoint(
-            tempTopRow0Current[0], tempTopRow1Current[0], tempTopRow3Current[0], tempTopRow4Current[0],
-            tempWestHaloZoneCurrent[0].first, tempWestHaloZoneCurrent[0].second, tempTopRow2Current[1], tempTopRow2Current[2],
-            tempTopRow2Current[0],
-            domainParamsTopRow0[0], domainParamsTopRow1[0], domainParamsTopRow3[0], domainParamsTopRow4[0],
-            domainParamsWestHaloZone[0].first, domainParamsWestHaloZone[0].second, domainParamsTopRow2[1], domainParamsTopRow2[2],
-            domainParamsTopRow2[0],
-            domainMapTopCenter0[0]);
-        tempWestHaloZoneNext[0].second = tempHaloTopRow0Next[1] = tempTileTopRow0Next[1] = computePoint(
-            tempTopRow0Current[1], tempTopRow1Current[1], tempTopRow3Current[1], tempTopRow4Current[1],
-            tempWestHaloZoneCurrent[0].second, tempTopRow2Current[0], tempTopRow2Current[2], tempTopRow2Current[3],
-            tempTopRow2Current[1],
-            domainParamsTopRow0[1], domainParamsTopRow1[1], domainParamsTopRow3[1], domainParamsTopRow4[1],
-            domainParamsWestHaloZone[0].second, domainParamsTopRow2[0], domainParamsTopRow2[2], domainParamsTopRow2[3],
-            domainParamsTopRow2[1],
-            domainMapTopCenter0[1]);
+        // the corner consists of 4 values, which must be stored to the tile, north and west halo zones
+        int verticalIdx = 0;
+        int haloZoneIdx = 0;
+        int firstHorizontalIdx = 1;
+        int secondHorizontalIdx = 2;
 
-        tempWestHaloZoneNext[1].first = tempHaloTopRow1Next[0] = tempTileTopRow1Next[0] = computePoint(
-            tempTopRow1Current[0], tempTopRow2Current[0], tempTopRow4Current[0], tempTopRow5Current[0],
-            tempWestHaloZoneCurrent[1].first, tempWestHaloZoneCurrent[1].second, tempTopRow3Current[1], tempTopRow3Current[2],
-            tempTopRow3Current[0],
-            domainParamsTopRow1[0], domainParamsTopRow2[0], domainParamsTopRow4[0], domainParamsTopRow5[0],
-            domainParamsWestHaloZone[1].first, domainParamsWestHaloZone[1].second, domainParamsTopRow3[1], domainParamsTopRow3[2],
-            domainParamsTopRow3[0],
-            domainMapTopCenter1[0]);
-        tempWestHaloZoneNext[1].second = tempHaloTopRow1Next[1] = tempTileTopRow1Next[1] = computePoint(
-            tempTopRow1Current[1], tempTopRow2Current[1], tempTopRow4Current[1], tempTopRow5Current[1],
-            tempWestHaloZoneCurrent[1].second, tempTopRow3Current[0], tempTopRow3Current[2], tempTopRow3Current[3],
-            tempTopRow3Current[1],
-            domainParamsTopRow1[1], domainParamsTopRow2[1], domainParamsTopRow4[1], domainParamsTopRow5[1],
-            domainParamsWestHaloZone[1].second, domainParamsTopRow3[0], domainParamsTopRow3[2], domainParamsTopRow3[3],
-            domainParamsTopRow3[1],
-            domainMapTopCenter1[1]);
+        // most left most upper value
+        tempWestHaloZoneNext[haloZoneIdx].first = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
+            tempTopRow0Current[verticalIdx], tempTopRow1Current[verticalIdx], tempTopRow3Current[verticalIdx], tempTopRow4Current[verticalIdx],
+            tempWestHaloZoneCurrent[haloZoneIdx].first, tempWestHaloZoneCurrent[haloZoneIdx].second, tempTopRow2Current[firstHorizontalIdx], tempTopRow2Current[secondHorizontalIdx],
+            tempTopRow2Current[verticalIdx],
+            domainParamsTopRow0[verticalIdx], domainParamsTopRow1[0], domainParamsTopRow3[0], domainParamsTopRow4[0],
+            domainParamsWestHaloZone[haloZoneIdx].first, domainParamsWestHaloZone[haloZoneIdx].second, domainParamsTopRow2[firstHorizontalIdx], domainParamsTopRow2[secondHorizontalIdx],
+            domainParamsTopRow2[verticalIdx],
+            domainMapTopCenter0[verticalIdx]);
+
+        verticalIdx = 1;
+        firstHorizontalIdx = 0;
+        int thirdHorizontalIdx = 3;
+
+        // second most left most upper value
+        tempWestHaloZoneNext[haloZoneIdx].second = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
+            tempTopRow0Current[verticalIdx], tempTopRow1Current[verticalIdx], tempTopRow3Current[verticalIdx], tempTopRow4Current[verticalIdx],
+            tempWestHaloZoneCurrent[haloZoneIdx].second, tempTopRow2Current[firstHorizontalIdx], tempTopRow2Current[secondHorizontalIdx], tempTopRow2Current[thirdHorizontalIdx],
+            tempTopRow2Current[verticalIdx],
+            domainParamsTopRow0[verticalIdx], domainParamsTopRow1[verticalIdx], domainParamsTopRow3[verticalIdx], domainParamsTopRow4[verticalIdx],
+            domainParamsWestHaloZone[haloZoneIdx].second, domainParamsTopRow2[firstHorizontalIdx], domainParamsTopRow2[secondHorizontalIdx], domainParamsTopRow2[thirdHorizontalIdx],
+            domainParamsTopRow2[verticalIdx],
+            domainMapTopCenter0[verticalIdx]);
+
+        verticalIdx = 0;
+        haloZoneIdx = 1;
+        firstHorizontalIdx = 1;
+        secondHorizontalIdx = 2;
+
+        // most left second most upper value
+        tempWestHaloZoneNext[haloZoneIdx].first = tempHaloTopRow1Next[verticalIdx] = tempTileTopRow1Next[verticalIdx] = computePoint(
+            tempTopRow1Current[verticalIdx], tempTopRow2Current[verticalIdx], tempTopRow4Current[verticalIdx], tempTopRow5Current[verticalIdx],
+            tempWestHaloZoneCurrent[haloZoneIdx].first, tempWestHaloZoneCurrent[haloZoneIdx].second, tempTopRow3Current[firstHorizontalIdx], tempTopRow3Current[secondHorizontalIdx],
+            tempTopRow3Current[verticalIdx],
+            domainParamsTopRow1[verticalIdx], domainParamsTopRow2[verticalIdx], domainParamsTopRow4[verticalIdx], domainParamsTopRow5[verticalIdx],
+            domainParamsWestHaloZone[haloZoneIdx].first, domainParamsWestHaloZone[haloZoneIdx].second, domainParamsTopRow3[firstHorizontalIdx], domainParamsTopRow3[secondHorizontalIdx],
+            domainParamsTopRow3[verticalIdx],
+            domainMapTopCenter1[verticalIdx]);
+
+        verticalIdx = 1;
+        firstHorizontalIdx = 0;
+        thirdHorizontalIdx = 3;
+
+        // second most left second most upper value
+        tempWestHaloZoneNext[haloZoneIdx].second = tempHaloTopRow1Next[verticalIdx] = tempTileTopRow1Next[verticalIdx] = computePoint(
+            tempTopRow1Current[verticalIdx], tempTopRow2Current[haloZoneIdx], tempTopRow4Current[haloZoneIdx], tempTopRow5Current[haloZoneIdx],
+            tempWestHaloZoneCurrent[haloZoneIdx].second, tempTopRow3Current[firstHorizontalIdx], tempTopRow3Current[secondHorizontalIdx], tempTopRow3Current[thirdHorizontalIdx],
+            tempTopRow3Current[haloZoneIdx],
+            domainParamsTopRow1[haloZoneIdx], domainParamsTopRow2[haloZoneIdx], domainParamsTopRow4[haloZoneIdx], domainParamsTopRow5[haloZoneIdx],
+            domainParamsWestHaloZone[haloZoneIdx].second, domainParamsTopRow3[firstHorizontalIdx], domainParamsTopRow3[secondHorizontalIdx], domainParamsTopRow3[thirdHorizontalIdx],
+            domainParamsTopRow3[haloZoneIdx],
+            domainMapTopCenter1[haloZoneIdx]);
     }
 
     // top row
