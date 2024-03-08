@@ -234,6 +234,7 @@ void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
         int haloZoneIdx = 0;
         int firstHorizontalIdx = 1;
         int secondHorizontalIdx = 2;
+        int thirdHorizontalIdx = 3;
 
         // most left most upper value
         tempWestHaloZoneNext[haloZoneIdx].first = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
@@ -247,7 +248,6 @@ void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
 
         verticalIdx = 1;
         firstHorizontalIdx = 0;
-        int thirdHorizontalIdx = 3;
 
         // second most left most upper value
         tempWestHaloZoneNext[haloZoneIdx].second = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
@@ -316,39 +316,65 @@ void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
     // right upper corner
     if (!isTopRow() && !isRightColumn()) // node is not in the top row and not in the right column
     {
-        tempEastHaloZoneNext[0].first = tempHaloTopRow0Next[_edgeSizes.localWidth - 2] = tempTileTopRow0Next[_edgeSizes.localWidth - 2] = computePoint(
-            tempTopRow0Current[_edgeSizes.localWidth - 2], tempTopRow1Current[_edgeSizes.localWidth - 2], tempTopRow3Current[_edgeSizes.localWidth - 2], tempTopRow4Current[_edgeSizes.localWidth - 2],
-            tempTopRow2Current[_edgeSizes.localWidth - 4], tempTopRow2Current[_edgeSizes.localWidth - 3], tempTopRow2Current[_edgeSizes.localWidth - 1], tempEastHaloZoneCurrent[0].first,
-            tempTopRow2Current[_edgeSizes.localWidth - 2],
-            domainParamsTopRow0[_edgeSizes.localWidth - 2], domainParamsTopRow1[_edgeSizes.localWidth - 2], domainParamsTopRow3[_edgeSizes.localWidth - 2], domainParamsTopRow4[_edgeSizes.localWidth - 2],
-            domainParamsTopRow2[_edgeSizes.localWidth - 4], domainParamsTopRow2[_edgeSizes.localWidth - 3], domainParamsTopRow2[_edgeSizes.localWidth - 1], domainParamsEastHaloZone[0].first,
-            domainParamsTopRow2[_edgeSizes.localWidth - 2],
-            domainMapTile[_edgeSizes.localWidth - 2]);
-        tempEastHaloZoneNext[0].second = tempHaloTopRow0Next[_edgeSizes.localWidth - 1] = tempTileTopRow0Next[_edgeSizes.localWidth - 1] = computePoint(
-            tempTopRow0Current[_edgeSizes.localWidth - 1], tempTopRow1Current[_edgeSizes.localWidth - 1], tempTopRow3Current[_edgeSizes.localWidth - 1], tempTopRow4Current[_edgeSizes.localWidth - 1],
-            tempTopRow2Current[_edgeSizes.localWidth - 3], tempTopRow2Current[_edgeSizes.localWidth - 2], tempEastHaloZoneCurrent[0].first, tempEastHaloZoneCurrent[0].second,
-            tempTopRow2Current[_edgeSizes.localWidth - 1],
-            domainParamsTopRow0[_edgeSizes.localWidth - 1], domainParamsTopRow1[_edgeSizes.localWidth - 1], domainParamsTopRow3[_edgeSizes.localWidth - 1], domainParamsTopRow4[_edgeSizes.localWidth - 1],
-            domainParamsTopRow2[_edgeSizes.localWidth - 3], domainParamsTopRow2[_edgeSizes.localWidth - 2], domainParamsEastHaloZone[0].first, domainParamsEastHaloZone[0].second,
-            domainParamsTopRow2[_edgeSizes.localWidth - 1],
-            domainMapTile[_edgeSizes.localWidth - 1]);
+        // the corner consists of 4 values, which must be stored to the tile, north and east halo zones
 
-        tempEastHaloZoneNext[1].first = tempHaloTopRow1Next[_edgeSizes.localWidth - 2] = tempTileTopRow1Next[_edgeSizes.localWidth - 2] = computePoint(
-            tempTopRow1Current[_edgeSizes.localWidth - 2], tempTopRow2Current[_edgeSizes.localWidth - 2], tempTopRow4Current[_edgeSizes.localWidth - 2], tempTopRow5Current[_edgeSizes.localWidth - 2],
-            tempTopRow3Current[_edgeSizes.localWidth - 4], tempTopRow3Current[_edgeSizes.localWidth - 3], tempEastHaloZoneCurrent[1].first, tempEastHaloZoneCurrent[1].second,
-            tempTopRow3Current[_edgeSizes.localWidth - 2],
-            domainParamsTopRow1[_edgeSizes.localWidth - 2], domainParamsTopRow2[_edgeSizes.localWidth - 2], domainParamsTopRow4[_edgeSizes.localWidth - 2], domainParamsTopRow5[_edgeSizes.localWidth - 2],
-            domainParamsTopRow3[_edgeSizes.localWidth - 4], domainParamsTopRow3[_edgeSizes.localWidth - 3], domainParamsEastHaloZone[1].first, domainParamsEastHaloZone[1].second,
-            domainParamsTopRow3[_edgeSizes.localWidth - 2],
-            domainMapTile[_edgeSizes.localWidth - 2]);
-        tempEastHaloZoneNext[1].second = tempHaloTopRow1Next[_edgeSizes.localWidth - 1] = tempTileTopRow1Next[_edgeSizes.localWidth - 1] = computePoint(
-            tempTopRow1Current[_edgeSizes.localWidth - 1], tempTopRow2Current[_edgeSizes.localWidth - 1], tempTopRow4Current[_edgeSizes.localWidth - 1], tempTopRow5Current[_edgeSizes.localWidth - 1],
-            tempTopRow3Current[_edgeSizes.localWidth - 3], tempEastHaloZoneCurrent[1].first, tempEastHaloZoneCurrent[1].second, tempTopRow3Current[_edgeSizes.localWidth - 1],
-            tempTopRow3Current[_edgeSizes.localWidth - 2],
-            domainParamsTopRow1[_edgeSizes.localWidth - 1], domainParamsTopRow2[_edgeSizes.localWidth - 1], domainParamsTopRow4[_edgeSizes.localWidth - 1], domainParamsTopRow5[_edgeSizes.localWidth - 1],
-            domainParamsTopRow3[_edgeSizes.localWidth - 3], domainParamsEastHaloZone[1].first, domainParamsEastHaloZone[1].second, domainParamsTopRow3[_edgeSizes.localWidth - 1],
-            domainParamsTopRow3[_edgeSizes.localWidth - 2],
-            domainMapTile[_edgeSizes.localWidth - 1]);
+        int verticalIdx = _edgeSizes.localWidth - 2;
+        int haloZoneIdx = 0;
+        int firstHorizontalIdx = _edgeSizes.localWidth - 4;
+        int secondHorizontalIdx = _edgeSizes.localWidth - 3;
+        int thirdHorizontalIdx = _edgeSizes.localWidth - 1;
+
+        // second most right most upper value
+        tempEastHaloZoneNext[haloZoneIdx].first = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
+            tempTopRow0Current[verticalIdx], tempTopRow1Current[verticalIdx], tempTopRow3Current[verticalIdx], tempTopRow4Current[verticalIdx],
+            tempTopRow2Current[firstHorizontalIdx], tempTopRow2Current[secondHorizontalIdx], tempTopRow2Current[thirdHorizontalIdx], tempEastHaloZoneCurrent[haloZoneIdx].first,
+            tempTopRow2Current[verticalIdx],
+            domainParamsTopRow0[verticalIdx], domainParamsTopRow1[verticalIdx], domainParamsTopRow3[verticalIdx], domainParamsTopRow4[verticalIdx],
+            domainParamsTopRow2[firstHorizontalIdx], domainParamsTopRow2[secondHorizontalIdx], domainParamsTopRow2[thirdHorizontalIdx], domainParamsEastHaloZone[haloZoneIdx].first,
+            domainParamsTopRow2[verticalIdx],
+            domainMapTile[verticalIdx]);
+
+        verticalIdx = _edgeSizes.localWidth - 1;
+        firstHorizontalIdx = _edgeSizes.localWidth - 3;
+        secondHorizontalIdx = _edgeSizes.localWidth - 2;
+
+        // most right most upper value
+        tempEastHaloZoneNext[haloZoneIdx].second = tempHaloTopRow0Next[verticalIdx] = tempTileTopRow0Next[verticalIdx] = computePoint(
+            tempTopRow0Current[verticalIdx], tempTopRow1Current[verticalIdx], tempTopRow3Current[verticalIdx], tempTopRow4Current[verticalIdx],
+            tempTopRow2Current[firstHorizontalIdx], tempTopRow2Current[secondHorizontalIdx], tempEastHaloZoneCurrent[haloZoneIdx].first, tempEastHaloZoneCurrent[haloZoneIdx].second,
+            tempTopRow2Current[verticalIdx],
+            domainParamsTopRow0[verticalIdx], domainParamsTopRow1[verticalIdx], domainParamsTopRow3[verticalIdx], domainParamsTopRow4[verticalIdx],
+            domainParamsTopRow2[firstHorizontalIdx], domainParamsTopRow2[secondHorizontalIdx], domainParamsEastHaloZone[haloZoneIdx].first, domainParamsEastHaloZone[haloZoneIdx].second,
+            domainParamsTopRow2[verticalIdx],
+            domainMapTile[verticalIdx]);
+
+        verticalIdx = _edgeSizes.localWidth - 2;
+        haloZoneIdx = 1;
+        firstHorizontalIdx = _edgeSizes.localWidth - 4;
+        secondHorizontalIdx = _edgeSizes.localWidth - 3;
+
+        // second most right second most upper value
+        tempEastHaloZoneNext[haloZoneIdx].first = tempHaloTopRow1Next[verticalIdx] = tempTileTopRow1Next[verticalIdx] = computePoint(
+            tempTopRow1Current[verticalIdx], tempTopRow2Current[verticalIdx], tempTopRow4Current[verticalIdx], tempTopRow5Current[verticalIdx],
+            tempTopRow3Current[firstHorizontalIdx], tempTopRow3Current[secondHorizontalIdx], tempTopRow3Current[thirdHorizontalIdx], tempEastHaloZoneCurrent[haloZoneIdx].first,
+            tempTopRow3Current[verticalIdx],
+            domainParamsTopRow1[verticalIdx], domainParamsTopRow2[verticalIdx], domainParamsTopRow4[verticalIdx], domainParamsTopRow5[verticalIdx],
+            domainParamsTopRow3[firstHorizontalIdx], domainParamsTopRow3[secondHorizontalIdx], domainParamsTopRow3[thirdHorizontalIdx], domainParamsEastHaloZone[haloZoneIdx].first,
+            domainParamsTopRow3[verticalIdx],
+            domainMapTile[verticalIdx]);
+
+        verticalIdx = _edgeSizes.localWidth - 1;
+        firstHorizontalIdx = _edgeSizes.localWidth - 3;
+        secondHorizontalIdx = _edgeSizes.localWidth - 2;
+        
+        tempEastHaloZoneNext[haloZoneIdx].second = tempHaloTopRow1Next[verticalIdx] = tempTileTopRow1Next[verticalIdx] = computePoint(
+            tempTopRow1Current[verticalIdx], tempTopRow2Current[verticalIdx], tempTopRow4Current[verticalIdx], tempTopRow5Current[verticalIdx],
+            tempTopRow3Current[firstHorizontalIdx], tempTopRow3Current[secondHorizontalIdx], tempEastHaloZoneCurrent[haloZoneIdx].first, tempEastHaloZoneCurrent[haloZoneIdx].second,
+            tempTopRow3Current[verticalIdx],
+            domainParamsTopRow1[verticalIdx], domainParamsTopRow2[verticalIdx], domainParamsTopRow4[verticalIdx], domainParamsTopRow5[verticalIdx],
+            domainParamsTopRow3[firstHorizontalIdx], domainParamsTopRow3[secondHorizontalIdx], domainParamsEastHaloZone[haloZoneIdx].first, domainParamsEastHaloZone[haloZoneIdx].second,
+            domainParamsTopRow3[verticalIdx],
+            domainMapTile[verticalIdx]);
     }
 
     // columns
