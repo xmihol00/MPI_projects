@@ -620,16 +620,26 @@ void ParallelHeatSolver::computeTempTile(bool current, bool next)
 
     for (size_t i = 2; i < _edgeSizes.localHeight - 2; i++)
     {
+        const int northUpperIdx = (i - 2) * _edgeSizes.localWidth;
+        const int northIdx = (i - 1) * _edgeSizes.localWidth;
+        const int centerIdx = i * _edgeSizes.localWidth;
+        const int southIdx = (i + 1) * _edgeSizes.localWidth;
+        const int southLowerIdx = (i + 2) * _edgeSizes.localWidth;
+        const int westLeftIdx = i * _edgeSizes.localWidth - 2;
+        const int westIdx = i * _edgeSizes.localWidth - 1;
+        const int eastIdx = i * _edgeSizes.localWidth + 1;
+        const int eastRightIdx = i * _edgeSizes.localWidth + 2;
+
         for (size_t j = 2; j < _edgeSizes.localWidth - 2; j++)
         {
-            tempNextTile[i * _edgeSizes.localWidth + j] = computePoint(
-                tempCurrentTile[(i - 2) * _edgeSizes.localWidth + j], tempCurrentTile[(i - 1) * _edgeSizes.localWidth + j], tempCurrentTile[(i + 1) * _edgeSizes.localWidth + j], tempCurrentTile[(i + 2) * _edgeSizes.localWidth + j],
-                tempCurrentTile[i * _edgeSizes.localWidth + j - 2], tempCurrentTile[i * _edgeSizes.localWidth + j - 1], tempCurrentTile[i * _edgeSizes.localWidth + j + 1], tempCurrentTile[i * _edgeSizes.localWidth + j + 2],
-                tempCurrentTile[i * _edgeSizes.localWidth + j],
-                _domainParamsTile[(i - 2) * _edgeSizes.localWidth + j], _domainParamsTile[(i - 1) * _edgeSizes.localWidth + j], _domainParamsTile[(i + 1) * _edgeSizes.localWidth + j], _domainParamsTile[(i + 2) * _edgeSizes.localWidth + j],
-                _domainParamsTile[i * _edgeSizes.localWidth + j - 2], _domainParamsTile[i * _edgeSizes.localWidth + j - 1], _domainParamsTile[i * _edgeSizes.localWidth + j + 1], _domainParamsTile[i * _edgeSizes.localWidth + j + 2],
-                _domainParamsTile[i * _edgeSizes.localWidth + j],
-                _domainMapTile[i * _edgeSizes.localWidth + j]);
+            tempNextTile[centerIdx + j] = computePoint(
+                tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
+                tempCurrentTile[westLeftIdx + j], tempCurrentTile[westIdx + j], tempCurrentTile[eastIdx + j], tempCurrentTile[eastRightIdx + j],
+                tempCurrentTile[centerIdx + j],
+                _domainParamsTile[northUpperIdx + j], _domainParamsTile[northIdx + j], _domainParamsTile[southIdx + j], _domainParamsTile[southLowerIdx + j],
+                _domainParamsTile[westLeftIdx + j], _domainParamsTile[westIdx + j], _domainParamsTile[eastIdx + j], _domainParamsTile[eastRightIdx + j],
+                _domainParamsTile[centerIdx + j],
+                _domainMapTile[centerIdx + j]);
         }
     }
 }
