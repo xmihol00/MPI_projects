@@ -248,9 +248,9 @@ void GenerateData(int * DomainMap, float * DomainParameters, float * InitialTemp
       {
         switch(DomainMap[y * Parameters.Size + x])
         {
-          case 0: DomainParameters[y * Parameters.Size + x] = 0.5; Air.GetF0(Parameters.dx, Parameters.dt); break;
-          case 1: DomainParameters[y * Parameters.Size + x] = 0.5; Aluminum.GetF0(Parameters.dx, Parameters.dt); break;
-          case 2: DomainParameters[y * Parameters.Size + x] = 0.5; Copper.GetF0(Parameters.dx, Parameters.dt); break;
+          case 0: DomainParameters[y * Parameters.Size + x] = Air.GetF0(Parameters.dx, Parameters.dt); break;
+          case 1: DomainParameters[y * Parameters.Size + x] = Aluminum.GetF0(Parameters.dx, Parameters.dt); break;
+          case 2: DomainParameters[y * Parameters.Size + x] = Copper.GetF0(Parameters.dx, Parameters.dt); break;
         }
       }
     }

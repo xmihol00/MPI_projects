@@ -24,8 +24,9 @@ using namespace std;
 
 ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationProps,
                                        const MaterialProperties &materialProps)
-    : HeatSolverBase(simulationProps, materialProps), _simulationHyperParams{.airFlowRate = mSimulationProps.getAirflowRate(),
-                                                                             .coolerTemp = mMaterialProps.getCoolerTemperature()}
+    : HeatSolverBase(simulationProps, materialProps), 
+      _simulationHyperParams{.airFlowRate = mSimulationProps.getAirflowRate(),
+                             .coolerTemp = mMaterialProps.getCoolerTemperature()}
 {
     MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &_worldRank);
@@ -54,6 +55,17 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
         /*  If mSimulationProps.useParallelIO() flag is set to true, open output file for parallel access, otherwise open it  */
         /*                         only on MASTER rank using sequetial IO. Use openOutputFile* methods.                       */
         /**********************************************************************************************************************/
+        if (mSimulationProps.useParallelIO())
+        {
+            openOutputFileParallel();
+        }
+        else
+        {
+            if (_worldRank == 0)
+            {
+                openOutputFileSequential();
+            }
+        }
     }
 }
 
@@ -732,11 +744,23 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel(size_t iteration)
 {
     float sum = 0;
     pair<float, float> *tempWestHaloZoneNext = reinterpret_cast<pair<float, float> *>(_tempHaloZones[1].data() + 2 * _offsets.northSouthHalo);
-    for (size_t i = 0; i < _edgeSizes.localHeight; i++)
+    if (_decomposition.nx == 1) // there is only one column, middle column of the tile must be sampled (can happen only with 1 or 2 processes)
     {
-        sum += tempWestHaloZoneNext[i].first;
+        int midColIdx = _edgeSizes.localWidth >> 1;
+        for (size_t i = 0; i < _edgeSizes.localHeight; i++)
+        {
+            sum += _tempTiles[1][i * _edgeSizes.localWidth + midColIdx];
+        }
+        sum /= _edgeSizes.localHeight;
     }
-    sum /= _edgeSizes.localHeight;
+    else // there are multiple columns, left most column must be sampled
+    {
+        for (size_t i = 0; i < _edgeSizes.localHeight; i++)
+        {
+            sum += tempWestHaloZoneNext[i].first;
+        }
+        sum /= _edgeSizes.localHeight;
+    }
 
     float reducedSum = 0;
     MPI_Reduce(&sum, &reducedSum, 1, MPI_FLOAT, MPI_SUM, 0, _midColComm);
@@ -961,6 +985,14 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
             /**********************************************************************************************************************/
             /*                          Store the data into the output file using parallel or sequential IO.                      */
             /**********************************************************************************************************************/
+            if (mSimulationProps.useParallelIO())
+            {
+                storeDataIntoFileParallel(mFileHandle, iter, _tempTiles[next].data());
+            }
+            else
+            {
+                storeDataIntoFileSequential(mFileHandle, iter, _tempTiles[next].data());
+            }
         }
 
         if (shouldPrintProgress(iter) && shouldComputeMiddleColumnAverageTemperature())
@@ -1008,7 +1040,8 @@ void ParallelHeatSolver::storeDataIntoFileSequential(hid_t fileHandle,
 void ParallelHeatSolver::openOutputFileParallel()
 {
 #ifdef H5_HAVE_PARALLEL
-    Hdf5PropertyListHandle faplHandle{};
+    Hdf5PropertyListHandle faplHandle(H5Pcreate(H5P_FILE_ACCESS));
+    H5Pset_fapl_mpio(faplHandle, _topologyComm, MPI_INFO_NULL);
 
     /**********************************************************************************************************************/
     /*                          Open output HDF5 file for parallel access with alignment.                                 */
@@ -1028,9 +1061,7 @@ void ParallelHeatSolver::openOutputFileParallel()
 #endif /* H5_HAVE_PARALLEL */
 }
 
-void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle,
-                                                   [[maybe_unused]] size_t iteration,
-                                                   [[maybe_unused]] const float *localData)
+void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle, size_t iteration, const float *localData)
 {
     if (fileHandle == H5I_INVALID_HID)
     {
@@ -1038,14 +1069,17 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle,
     }
 
 #ifdef H5_HAVE_PARALLEL
-    array gridSize{static_cast<hsize_t>(mMaterialProps.getEdgeSize()),
-                   static_cast<hsize_t>(mMaterialProps.getEdgeSize())};
+    array<hsize_t, 2> gridSize{static_cast<hsize_t>(mMaterialProps.getEdgeSize()), static_cast<hsize_t>(mMaterialProps.getEdgeSize())};
+    array<hsize_t, 2> localGridSize{static_cast<hsize_t>(_edgeSizes.localHeight), static_cast<hsize_t>(_edgeSizes.localWidth)};
+    array<hsize_t, 2> tileOffset{static_cast<hsize_t>(_edgeSizes.localHeight * (_worldRank / _decomposition.nx)),
+                                 static_cast<hsize_t>(_edgeSizes.localWidth * (_worldRank % _decomposition.nx))};
+    array<hsize_t, 2> blockCount{1, 1};
 
     // Create new HDF5 group in the output file
     string groupName = "Timestep_" + to_string(iteration / mSimulationProps.getWriteIntensity());
 
     Hdf5GroupHandle groupHandle(H5Gcreate(fileHandle, groupName.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
-
+    
     {
         /**********************************************************************************************************************/
         /*                                Compute the tile offsets and sizes.                                                 */
@@ -1055,8 +1089,8 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle,
         // Create new dataspace and dataset using it.
         static constexpr string_view dataSetName{"Temperature"};
 
-        Hdf5PropertyListHandle datasetPropListHandle{};
-
+        Hdf5PropertyListHandle datasetPropListHandle(H5Pcreate(H5P_DATASET_CREATE));
+        H5Pset_chunk(datasetPropListHandle, 2, localGridSize.data());
         /**********************************************************************************************************************/
         /*                            Create dataset property list to set up chunking.                                        */
         /*                Set up chunking for collective write operation in datasetPropListHandle variable.                   */
@@ -1068,7 +1102,10 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle,
                                                   H5P_DEFAULT, datasetPropListHandle,
                                                   H5P_DEFAULT));
 
-        Hdf5DataspaceHandle memSpaceHandle{};
+        Hdf5DataspaceHandle memSpaceHandle(H5Screate_simple(2, localGridSize.data(), nullptr));
+        //H5Sselect_hyperslab(memSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, blockCount.data(), localGridSize.data());
+        H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, blockCount.data(), localGridSize.data());
+        //H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, localGridSize.data(), nullptr);
 
         /**********************************************************************************************************************/
         /*                Create memory dataspace representing tile in the memory (set up memSpaceHandle).                    */
@@ -1079,7 +1116,9 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle,
         /*                           (given by position of the tile in global domain).                                        */
         /**********************************************************************************************************************/
 
-        Hdf5PropertyListHandle propListHandle{};
+
+        Hdf5PropertyListHandle propListHandle(H5Pcreate(H5P_DATASET_XFER));
+        H5Pset_dxpl_mpio(propListHandle, H5FD_MPIO_COLLECTIVE);
 
         /**********************************************************************************************************************/
         /*              Perform collective write operation, writting tiles from all processes at once.                        */
