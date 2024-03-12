@@ -142,13 +142,13 @@ private:
      * @param localData Local data to be exchanged.
      * @param window    MPI_Win object to be used for RMA communication.
      */
-    void startHaloExchangeRMA(float *localData, MPI_Win window);
+    void startHaloExchangeRMA();
 
     /**
      * @brief Await halo exchange using RMA communication.
      * @param window MPI_Win object to be used for RMA communication.
      */
-    void awaitHaloExchangeRMA(MPI_Win window);
+    void awaitHaloExchangeRMA();
 
     /**
      * @brief Opens output HDF5 file for sequential access by MASTER rank only.
@@ -239,6 +239,8 @@ private:
 
     MPI_Request _haloExchangeRequest;
 
+    MPI_Win _haloExchangeWindow;
+
     struct Decomposition
     {
         int nx;
@@ -279,6 +281,8 @@ private:
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
     int _displacements[4] = {0, };
+    int _inverseDisplacements[4] = {0, };
+    int _neighbors[4] = {0, };
 
     #define PRINT_DEBUG 0
     #define MANIPULATE_TEMP 0
