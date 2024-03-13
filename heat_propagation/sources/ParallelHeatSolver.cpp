@@ -191,55 +191,75 @@ void ParallelHeatSolver::initDataTypes()
     int tileSize[2] = {_edgeSizes.global, _edgeSizes.global};
     int localTileSize[2] = {_edgeSizes.localHeight, _edgeSizes.localWidth};
     int starts[2] = {0, 0};
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_tileWithoutHaloZones);
-    MPI_Type_commit(&_tileWithoutHaloZones);
-    MPI_Type_create_resized(_tileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(float), &_tileWithoutHaloZonesResized);
-    MPI_Type_commit(&_tileWithoutHaloZonesResized);
+    
+    // temperature/domain parameters scatter and gather data type
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatTileWithoutHaloZones);
+    MPI_Type_commit(&_floatTileWithoutHaloZones);
+    MPI_Type_create_resized(_floatTileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(float), &_floatTileWithoutHaloZonesResized);
+    MPI_Type_commit(&_floatTileWithoutHaloZonesResized);
+
+    // domain map scatter data type
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_INT, &_intMapTileWithoutHaloZones);
+    MPI_Type_commit(&_intMapTileWithoutHaloZones);
+    MPI_Type_create_resized(_intMapTileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(int), &_intMapTileWithoutHaloZonesResized);
+    MPI_Type_commit(&_intMapTileWithoutHaloZonesResized);
 
     tileSize[0] = _edgeSizes.localHeight + 4;
     tileSize[1] = _edgeSizes.localWidth + 4;
     starts[0] = 2;
     starts[1] = 2;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_tileWithHaloZones);
-    MPI_Type_commit(&_tileWithHaloZones);
+
+    // temperature local tile with halo zones data type
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatTileWithHaloZones);
+    MPI_Type_commit(&_floatTileWithHaloZones);
 
     _scatterCounts.resize(_worldSize);
     _scatterDisplacements.resize(_worldSize);
     for (int i = 0; i < _worldSize; i++)
     {
         _scatterCounts[i] = 1;
+        // ensure displacements are increasing by 1 on the same row of nodes and between rows of nodes by the multiple of local tile hight and width
+        // i.e. each row of nodes must displace itself by multiple of whole tiles, while within the row of nodes the displacement is by 1
         _scatterDisplacements[i] = (i % _decomposition.nx) + _edgeSizes.localHeight * (i / _decomposition.nx) * _decomposition.nx;
     }
 
     localTileSize[0] = 2;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[0]);
-    MPI_Type_commit(&_sendHaloZoneDataTypes[0]);
-    starts[0] = 0;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[0]);
-    MPI_Type_commit(&_recvHaloZoneDataTypes[0]);
+    localTileSize[1] = _edgeSizes.localWidth;
 
+    // temperature/domain parameters north halo zones for all to all exchange
+    starts[0] = 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatSendHaloZone[NORTH]);
+    MPI_Type_commit(&_floatSendHaloZone[NORTH]);
+    starts[0] = 0;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatRecvHaloZone[NORTH]);
+    MPI_Type_commit(&_floatRecvHaloZone[NORTH]);
+
+    // temperature/domain parameters south halo zones for all to all exchange
     starts[0] = _edgeSizes.localHeight;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[1]);
-    MPI_Type_commit(&_sendHaloZoneDataTypes[1]);
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatSendHaloZone[SOUTH]);
+    MPI_Type_commit(&_floatSendHaloZone[SOUTH]);
     starts[0] = _edgeSizes.localHeight + 2;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[1]);
-    MPI_Type_commit(&_recvHaloZoneDataTypes[1]);
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatRecvHaloZone[SOUTH]);
+    MPI_Type_commit(&_floatRecvHaloZone[SOUTH]);
 
     localTileSize[0] = _edgeSizes.localHeight;
     localTileSize[1] = 2;
-    starts[0] = 2;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[2]);
-    MPI_Type_commit(&_sendHaloZoneDataTypes[2]);
-    starts[1] = 0;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[2]);
-    MPI_Type_commit(&_recvHaloZoneDataTypes[2]);
 
+    // temperature/domain parameters west halo zones for all to all exchange
+    starts[0] = 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatSendHaloZone[WEST]);
+    MPI_Type_commit(&_floatSendHaloZone[WEST]);
+    starts[1] = 0;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatRecvHaloZone[WEST]);
+    MPI_Type_commit(&_floatRecvHaloZone[WEST]);
+
+    // temperature/domain parameters east halo zones for all to all exchange
     starts[1] = _edgeSizes.localWidth;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[3]);
-    MPI_Type_commit(&_sendHaloZoneDataTypes[3]);
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatSendHaloZone[EAST]);
+    MPI_Type_commit(&_floatSendHaloZone[EAST]);
     starts[1] = _edgeSizes.localWidth + 2;
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[3]);
-    MPI_Type_commit(&_recvHaloZoneDataTypes[3]);
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatRecvHaloZone[EAST]);
+    MPI_Type_commit(&_floatRecvHaloZone[EAST]);
 }
 
 void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
@@ -1001,10 +1021,10 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         }
     }
 
-    MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _tileWithoutHaloZonesResized,
-                 _tempTilesAndHaloZones[0].data(), 1, _tileWithHaloZones, 0, MPI_COMM_WORLD);
-    MPI_Neighbor_alltoallw(_tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _sendHaloZoneDataTypes,
-                  _tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _recvHaloZoneDataTypes, _topologyComm);
+    MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
+                 _tempTilesAndHaloZones[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
+    MPI_Neighbor_alltoallw(_tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
+                  _tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
 
     for (int i = 0; i < _worldSize; i++)
     {

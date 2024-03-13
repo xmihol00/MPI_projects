@@ -236,6 +236,8 @@ private:
     /// @brief Output file handle (parallel or sequential).
     Hdf5FileHandle mFileHandle{};
 
+    enum { NORTH = 0, SOUTH, WEST, EAST };
+
     MPI_Comm _topologyComm;
     MPI_Comm _midColComm;
     MPI_Comm _scatterGatherColComm;
@@ -245,20 +247,15 @@ private:
 
     MPI_Win _haloExchangeWindow;
 
-    MPI_Datatype _tileWithoutHaloZones;
-    MPI_Datatype _tileWithoutHaloZonesResized;
-    MPI_Datatype _tileWithHaloZones;
-    MPI_Datatype _northHaloZoneSend;
-    MPI_Datatype _northHaloZoneRecv;
-    MPI_Datatype _southHaloZoneSend;
-    MPI_Datatype _southHaloZoneRecv;
-    MPI_Datatype _westHaloZoneSend;
-    MPI_Datatype _westHaloZoneRecv;
-    MPI_Datatype _eastHaloZoneSend;
-    MPI_Datatype _eastHaloZoneRecv;
+    MPI_Datatype _floatTileWithoutHaloZones;
+    MPI_Datatype _floatTileWithoutHaloZonesResized;
+    MPI_Datatype _floatTileWithHaloZones;
 
-    MPI_Datatype _sendHaloZoneDataTypes[4];
-    MPI_Datatype _recvHaloZoneDataTypes[4];
+    MPI_Datatype _intMapTileWithoutHaloZones;
+    MPI_Datatype _intMapTileWithoutHaloZonesResized;
+
+    MPI_Datatype _floatSendHaloZone[4];
+    MPI_Datatype _floatRecvHaloZone[4];
 
     struct Decomposition
     {
