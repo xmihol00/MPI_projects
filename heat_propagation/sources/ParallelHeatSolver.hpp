@@ -197,6 +197,10 @@ private:
 
     void exchangeInitialHaloZones();
 
+    void initDataTypes();
+
+    void deinitDataTypes();
+
     inline constexpr bool isTopRow();
 
     inline constexpr bool isBottomRow();
@@ -241,6 +245,21 @@ private:
 
     MPI_Win _haloExchangeWindow;
 
+    MPI_Datatype _tileWithoutHaloZones;
+    MPI_Datatype _tileWithoutHaloZonesResized;
+    MPI_Datatype _tileWithHaloZones;
+    MPI_Datatype _northHaloZoneSend;
+    MPI_Datatype _northHaloZoneRecv;
+    MPI_Datatype _southHaloZoneSend;
+    MPI_Datatype _southHaloZoneRecv;
+    MPI_Datatype _westHaloZoneSend;
+    MPI_Datatype _westHaloZoneRecv;
+    MPI_Datatype _eastHaloZoneSend;
+    MPI_Datatype _eastHaloZoneRecv;
+
+    MPI_Datatype _sendHaloZoneDataTypes[4];
+    MPI_Datatype _recvHaloZoneDataTypes[4];
+
     struct Decomposition
     {
         int nx;
@@ -278,28 +297,35 @@ private:
     std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
 
+    std::vector<float, AlignedAllocator<float>> _tempTilesAndHaloZones[2];
+
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
     int _displacements[4] = {0, };
     int _inverseDisplacements[4] = {0, };
     int _neighbors[4] = {0, };
+    int _transferCountsDataType[4] = {1, 1, 1, 1};
+    MPI_Aint _displacementsDataType[4] = {0, 0, 0, 0};
+    std::vector<int> _scatterCounts;
+    std::vector<int> _scatterDisplacements;
 
-    #define PRINT_DEBUG 0
+    #define PRINT_DEBUG 1
     #define MANIPULATE_TEMP 0
 
     #if PRINT_DEBUG
-        void printTile(int rank, int tile)
+        void printTile(int rank, std::vector<float, AlignedAllocator<float>> &tile, int offset)
         {
             if (_worldRank == rank)
             {
                 std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
-                std::cerr << std::setprecision(7) << std::fixed;
+                std::cerr << "Tile size: " << tile.size() << std::endl;
+                //std::cerr << "Neighbours: " << _neighbors[0] << " " << _neighbors[1] << " " << _neighbors[2] << " " << _neighbors[3] << std::endl;
                 std::cerr << std::setw(9);
-                for (int i = 0; i < _edgeSizes.localHeight; i++)
+                for (int i = 0; i < _edgeSizes.localHeight + offset; i++)
                 {
-                    for (int j = 0; j < _edgeSizes.localWidth; j++)
+                    for (int j = 0; j < _edgeSizes.localWidth + offset; j++)
                     {
-                        std::cerr << _tempTiles[tile][i * _edgeSizes.localWidth + j] << " ";
+                        std::cerr << std::setw(3) << (int)tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
                     }
                     std::cerr << std::endl;
                 }

@@ -47,6 +47,7 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
     allocLocalTiles();
     initGridTopology();
     initDataDistribution();
+    initDataTypes();
 
     if (!mSimulationProps.getOutputFileName().empty())
     {
@@ -180,6 +181,65 @@ void ParallelHeatSolver::allocLocalTiles()
         _initialScatterDomainParams.resize(_edgeSizes.global * _edgeSizes.localHeight);
         _initialScatterDomainMap.resize(_edgeSizes.global * _edgeSizes.localHeight);
     }
+
+    _tempTilesAndHaloZones[0].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+    _tempTilesAndHaloZones[1].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+}
+
+void ParallelHeatSolver::initDataTypes()
+{
+    int tileSize[2] = {_edgeSizes.global, _edgeSizes.global};
+    int localTileSize[2] = {_edgeSizes.localHeight, _edgeSizes.localWidth};
+    int starts[2] = {0, 0};
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_tileWithoutHaloZones);
+    MPI_Type_commit(&_tileWithoutHaloZones);
+    MPI_Type_create_resized(_tileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(float), &_tileWithoutHaloZonesResized);
+    MPI_Type_commit(&_tileWithoutHaloZonesResized);
+
+    tileSize[0] = _edgeSizes.localHeight + 4;
+    tileSize[1] = _edgeSizes.localWidth + 4;
+    starts[0] = 2;
+    starts[1] = 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_tileWithHaloZones);
+    MPI_Type_commit(&_tileWithHaloZones);
+
+    _scatterCounts.resize(_worldSize);
+    _scatterDisplacements.resize(_worldSize);
+    for (int i = 0; i < _worldSize; i++)
+    {
+        _scatterCounts[i] = 1;
+        _scatterDisplacements[i] = (i % _decomposition.nx) + _edgeSizes.localHeight * (i / _decomposition.nx) * _decomposition.nx;
+    }
+
+    localTileSize[0] = 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[0]);
+    MPI_Type_commit(&_sendHaloZoneDataTypes[0]);
+    starts[0] = 0;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[0]);
+    MPI_Type_commit(&_recvHaloZoneDataTypes[0]);
+
+    starts[0] = _edgeSizes.localHeight;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[1]);
+    MPI_Type_commit(&_sendHaloZoneDataTypes[1]);
+    starts[0] = _edgeSizes.localHeight + 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[1]);
+    MPI_Type_commit(&_recvHaloZoneDataTypes[1]);
+
+    localTileSize[0] = _edgeSizes.localHeight;
+    localTileSize[1] = 2;
+    starts[0] = 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[2]);
+    MPI_Type_commit(&_sendHaloZoneDataTypes[2]);
+    starts[1] = 0;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[2]);
+    MPI_Type_commit(&_recvHaloZoneDataTypes[2]);
+
+    starts[1] = _edgeSizes.localWidth;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_sendHaloZoneDataTypes[3]);
+    MPI_Type_commit(&_sendHaloZoneDataTypes[3]);
+    starts[1] = _edgeSizes.localWidth + 2;
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_recvHaloZoneDataTypes[3]);
+    MPI_Type_commit(&_recvHaloZoneDataTypes[3]);
 }
 
 void ParallelHeatSolver::computeTempHaloZones(bool current, bool next)
@@ -928,6 +988,29 @@ void ParallelHeatSolver::exchangeInitialHaloZones()
 
 void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 {
+    if (_worldRank == 0)
+    {
+        for (int i = 0; i < _edgeSizes.global; i++)
+        {
+            for (int j = 0; j < _edgeSizes.global; j++)
+            {
+                ((float *)((size_t)(&mMaterialProps.getInitialTemperature().data()[i * _edgeSizes.global + j])))[0] = (j*8) / _edgeSizes.global + (i + 5) * 20;
+                cerr << mMaterialProps.getInitialTemperature()[i * _edgeSizes.global + j] << " ";
+            }
+            cerr << endl;
+        }
+    }
+
+    MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _tileWithoutHaloZonesResized,
+                 _tempTilesAndHaloZones[0].data(), 1, _tileWithHaloZones, 0, MPI_COMM_WORLD);
+    MPI_Neighbor_alltoallw(_tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _sendHaloZoneDataTypes,
+                  _tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _recvHaloZoneDataTypes, _topologyComm);
+
+    for (int i = 0; i < _worldSize; i++)
+    {
+        printTile(i, _tempTilesAndHaloZones[0], 4);
+    }
+
     // scatter the initial data across the nodes from the root node
     scatterInitialData();
 
@@ -1088,9 +1171,7 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle, size_t iter
                                                   H5P_DEFAULT));
 
         Hdf5DataspaceHandle memSpaceHandle(H5Screate_simple(2, localGridSize.data(), nullptr));
-        //H5Sselect_hyperslab(memSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, blockCount.data(), localGridSize.data());
         H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, blockCount.data(), localGridSize.data());
-        //H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, localGridSize.data(), nullptr);
 
         /**********************************************************************************************************************/
         /*                Create memory dataspace representing tile in the memory (set up memSpaceHandle).                    */
