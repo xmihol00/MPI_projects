@@ -103,21 +103,30 @@ private:
      * @param current index of the current temperature values.
      * @param next    index of the next temperature values.
      */
-    void computeTempHaloZones(bool current, bool next);
+    void computeTempHaloZones_Raw(bool current, bool next);
+
+    /**
+     * @brief Compute temperature of the next iteration in the halo zones.
+     * @param current index of the current temperature values.
+     * @param next    index of the next temperature values.
+     */
+    void computeTempHaloZones_DataType(bool current, bool next);
 
     /**
      * @brief Compute temperature of the next iteration in the local tiles.
      * @param current index of the current temperature values.
      * @param next    index of the next temperature values.
      */
-    void computeTempTile(bool current, bool next);
+    void computeTempTile_Raw(bool current, bool next);
+    void computeTempTile_DataType(bool current, bool next);
 
     /**
      * @brief Compute the average temperature of the middle column per process, 
      *        reduce it to the middle column root and print progress report.
      * @param iteration Current iteration number.
      */
-    void computeAndPrintMidColAverageParallel(size_t iteration);
+    void computeAndPrintMidColAverageParallel_Raw(size_t iteration);
+    void computeAndPrintMidColAverageParallel_DataType(size_t iteration);
 
     /**
      * @brief Compute the average temperature of the middle column in the final 
@@ -130,7 +139,8 @@ private:
     /**
      * @brief Start halo exchange using point-to-point communication.
      */
-    void startHaloExchangeP2P();
+    void startHaloExchangeP2P_Raw();
+    void startHaloExchangeP2P_DataType(bool current, bool next);
 
     /**
      * @brief Await halo exchange using point-to-point communication.
@@ -189,7 +199,8 @@ private:
      */
     bool shouldComputeMiddleColumnAverageTemperature() const;
 
-    void scatterInitialData();
+    void scatterInitialData_Raw();
+    void scatterInitialData_DataType();
 
     void gatherComputedTempData(bool final, std::vector<float, AlignedAllocator<float>> &outResult);
 
@@ -274,6 +285,8 @@ private:
     {
         size_t northSouthHalo;
         size_t westEastHalo;
+        size_t tileWidthWithHalos;
+        size_t tileHeightWithHalos;
     } _offsets;
 
     struct SimulationHyperParams
@@ -295,6 +308,7 @@ private:
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
 
     std::vector<float, AlignedAllocator<float>> _tempTilesAndHaloZones[2];
+    std::vector<float, AlignedAllocator<float>> _domainParamsTileAndHaloZones;
 
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
