@@ -140,7 +140,7 @@ private:
      * @brief Start halo exchange using point-to-point communication.
      */
     void startHaloExchangeP2P_Raw();
-    void startHaloExchangeP2P_DataType(bool current, bool next);
+    void startHaloExchangeP2P_DataType(bool next);
 
     /**
      * @brief Await halo exchange using point-to-point communication.
@@ -202,7 +202,8 @@ private:
     void scatterInitialData_Raw();
     void scatterInitialData_DataType();
 
-    void gatherComputedTempData(bool final, std::vector<float, AlignedAllocator<float>> &outResult);
+    void gatherComputedTempData_Raw(bool final, std::vector<float, AlignedAllocator<float>> &outResult);
+    void gatherComputedTempData_DataType(bool final, std::vector<float, AlignedAllocator<float>> &outResult);
 
     void prepareInitialHaloZones();
 
@@ -262,8 +263,9 @@ private:
     MPI_Datatype _floatTileWithoutHaloZonesResized;
     MPI_Datatype _floatTileWithHaloZones;
 
-    MPI_Datatype _intMapTileWithoutHaloZones;
-    MPI_Datatype _intMapTileWithoutHaloZonesResized;
+    MPI_Datatype _intTileWithoutHaloZones;
+    MPI_Datatype _intTileWithoutHaloZonesResized;
+    MPI_Datatype _intTileWithHaloZones;
 
     MPI_Datatype _floatSendHaloZone[4];
     MPI_Datatype _floatRecvHaloZone[4];
@@ -307,8 +309,9 @@ private:
     std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
     std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
 
-    std::vector<float, AlignedAllocator<float>> _tempTilesAndHaloZones[2];
-    std::vector<float, AlignedAllocator<float>> _domainParamsTileAndHaloZones;
+    std::vector<float, AlignedAllocator<float>> _tempTilesWithHaloZones[2];
+    std::vector<float, AlignedAllocator<float>> _domainParamsTileWithHaloZones;
+    std::vector<int, AlignedAllocator<int>> _domainMapTileWithHaloZones;
 
     // parameters for all to all gather
     int _transferCounts[4] = {0, };
@@ -331,12 +334,12 @@ private:
                 std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
                 std::cerr << "Tile size: " << tile.size() << std::endl;
                 //std::cerr << "Neighbours: " << _neighbors[0] << " " << _neighbors[1] << " " << _neighbors[2] << " " << _neighbors[3] << std::endl;
-                std::cerr << std::setw(9);
+                std::cerr << std::setprecision(2) << std::fixed;
                 for (int i = 0; i < _edgeSizes.localHeight + offset; i++)
                 {
                     for (int j = 0; j < _edgeSizes.localWidth + offset; j++)
                     {
-                        std::cerr << std::setw(3) << (int)tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
+                        std::cerr << std::setw(4) << tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -443,6 +446,14 @@ inline constexpr float ParallelHeatSolver::computePoint(
         domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
         domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
     );
+
+    if ((
+        domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
+        domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
+    ) == 0)
+    {
+        std::cerr << "Rank " << _worldRank << " zero division" << std::endl;
+    }
 
     float pointTemp = frac * (
         tempNorthUpper * domainParamNorthUpper + 

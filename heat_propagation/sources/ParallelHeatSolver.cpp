@@ -153,7 +153,7 @@ void ParallelHeatSolver::initDataDistribution()
 
 void ParallelHeatSolver::deinitDataDistribution()
 {
-    if (_decomposition.ny > 1 && _scatterGatherColComm != MPI_COMM_NULL)
+    if (_scatterGatherColComm != MPI_COMM_NULL)
     {
         MPI_Comm_free(&_scatterGatherColComm);
     }
@@ -184,9 +184,10 @@ void ParallelHeatSolver::allocLocalTiles()
         _initialScatterDomainMap.resize(_edgeSizes.global * _edgeSizes.localHeight);
     }
 
-    _tempTilesAndHaloZones[0].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
-    _tempTilesAndHaloZones[1].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
-    _domainParamsTileAndHaloZones.resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+    _tempTilesWithHaloZones[0].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+    _tempTilesWithHaloZones[1].resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+    _domainParamsTileWithHaloZones.resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
+    _domainMapTileWithHaloZones.resize((_edgeSizes.localWidth + 4) * (_edgeSizes.localHeight + 4));
 }
 
 void ParallelHeatSolver::initDataTypes()
@@ -202,19 +203,23 @@ void ParallelHeatSolver::initDataTypes()
     MPI_Type_commit(&_floatTileWithoutHaloZonesResized);
 
     // domain map scatter data type
-    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_INT, &_intMapTileWithoutHaloZones);
-    MPI_Type_commit(&_intMapTileWithoutHaloZones);
-    MPI_Type_create_resized(_intMapTileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(int), &_intMapTileWithoutHaloZonesResized);
-    MPI_Type_commit(&_intMapTileWithoutHaloZonesResized);
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_INT, &_intTileWithoutHaloZones);
+    MPI_Type_commit(&_intTileWithoutHaloZones);
+    MPI_Type_create_resized(_intTileWithoutHaloZones, 0, _edgeSizes.localWidth * sizeof(int), &_intTileWithoutHaloZonesResized);
+    MPI_Type_commit(&_intTileWithoutHaloZonesResized);
 
     tileSize[0] = _edgeSizes.localHeight + 4;
     tileSize[1] = _edgeSizes.localWidth + 4;
     starts[0] = 2;
     starts[1] = 2;
 
-    // temperature local tile with halo zones data type
+    // temperature/ domain parameters local tile with halo zones data type
     MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_FLOAT, &_floatTileWithHaloZones);
     MPI_Type_commit(&_floatTileWithHaloZones);
+
+    // domain map local tile with halo zones data type
+    MPI_Type_create_subarray(2, tileSize, localTileSize, starts, MPI_ORDER_C, MPI_INT, &_intTileWithHaloZones);
+    MPI_Type_commit(&_intTileWithHaloZones);
 
     _scatterCounts.resize(_worldSize);
     _scatterDisplacements.resize(_worldSize);
@@ -763,172 +768,188 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
 
 void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
 {
-    float *tempCurrentTile = _tempTiles[current].data();
-    float *tempCurrentTopRow0 = _tempTiles[current].data();
-    float *tempCurrentTopRow1 = _tempTiles[current].data() + _offsets.tileWidthWithHalos;
-    float *tempCurrentTopRow2 = _tempTiles[current].data() + 2 * _offsets.tileWidthWithHalos;
-    float *tempCurrentTopRow3 = _tempTiles[current].data() + 3 * _offsets.tileWidthWithHalos;
-    float *tempCurrentTopRow4 = _tempTiles[current].data() + 4 * _offsets.tileWidthWithHalos;
-    float *tempCurrentTopRow5 = _tempTiles[current].data() + 5 * _offsets.tileWidthWithHalos;
-    float *tempCurrentBotRow0 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 1) * _offsets.tileWidthWithHalos; // closest to the bottom
-    float *tempCurrentBotRow1 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 2) * _offsets.tileWidthWithHalos;
-    float *tempCurrentBotRow2 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
-    float *tempCurrentBotRow3 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
-    float *tempCurrentBotRow4 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 5) * _offsets.tileWidthWithHalos;
-    float *tempCurrentBotRow5 = _tempTiles[current].data() + (_offsets.tileHeightWithHalos - 6) * _offsets.tileWidthWithHalos;
+    float *tempCurrentTile = _tempTilesWithHaloZones[current].data();
+    float *tempCurrentTopRow0 = _tempTilesWithHaloZones[current].data();
+    float *tempCurrentTopRow1 = _tempTilesWithHaloZones[current].data() + _offsets.tileWidthWithHalos;
+    float *tempCurrentTopRow2 = _tempTilesWithHaloZones[current].data() + 2 * _offsets.tileWidthWithHalos;
+    float *tempCurrentTopRow3 = _tempTilesWithHaloZones[current].data() + 3 * _offsets.tileWidthWithHalos;
+    float *tempCurrentTopRow4 = _tempTilesWithHaloZones[current].data() + 4 * _offsets.tileWidthWithHalos;
+    float *tempCurrentTopRow5 = _tempTilesWithHaloZones[current].data() + 5 * _offsets.tileWidthWithHalos;
+    float *tempCurrentBotRow0 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 1) * _offsets.tileWidthWithHalos; // closest to the bottom
+    float *tempCurrentBotRow1 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 2) * _offsets.tileWidthWithHalos;
+    float *tempCurrentBotRow2 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
+    float *tempCurrentBotRow3 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
+    float *tempCurrentBotRow4 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 5) * _offsets.tileWidthWithHalos;
+    float *tempCurrentBotRow5 = _tempTilesWithHaloZones[current].data() + (_offsets.tileHeightWithHalos - 6) * _offsets.tileWidthWithHalos;
 
-    float *domainParamsTile = _domainParamsTile.data();
-    float *domainParamsTopRow0 = _domainParamsTile.data();
-    float *domainParamsTopRow1 = _domainParamsTile.data() + _offsets.tileWidthWithHalos;
-    float *domainParamsTopRow2 = _domainParamsTile.data() + 2 * _offsets.tileWidthWithHalos;
-    float *domainParamsTopRow3 = _domainParamsTile.data() + 3 * _offsets.tileWidthWithHalos;
-    float *domainParamsTopRow4 = _domainParamsTile.data() + 4 * _offsets.tileWidthWithHalos;
-    float *domainParamsTopRow5 = _domainParamsTile.data() + 5 * _offsets.tileWidthWithHalos;
-    float *domainParamsBotRow0 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 1) * _offsets.tileWidthWithHalos; // closest to the bottom
-    float *domainParamsBotRow1 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 2) * _offsets.tileWidthWithHalos;
-    float *domainParamsBotRow2 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
-    float *domainParamsBotRow3 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
-    float *domainParamsBotRow4 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 5) * _offsets.tileWidthWithHalos;
-    float *domainParamsBotRow5 = _domainParamsTile.data() + (_offsets.tileHeightWithHalos - 6) * _offsets.tileWidthWithHalos;
+    float *domainParamsTile = _domainParamsTileWithHaloZones.data();
+    float *domainParamsTopRow0 = _domainParamsTileWithHaloZones.data();
+    float *domainParamsTopRow1 = _domainParamsTileWithHaloZones.data() + _offsets.tileWidthWithHalos;
+    float *domainParamsTopRow2 = _domainParamsTileWithHaloZones.data() + 2 * _offsets.tileWidthWithHalos;
+    float *domainParamsTopRow3 = _domainParamsTileWithHaloZones.data() + 3 * _offsets.tileWidthWithHalos;
+    float *domainParamsTopRow4 = _domainParamsTileWithHaloZones.data() + 4 * _offsets.tileWidthWithHalos;
+    float *domainParamsTopRow5 = _domainParamsTileWithHaloZones.data() + 5 * _offsets.tileWidthWithHalos;
+    float *domainParamsBotRow0 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 1) * _offsets.tileWidthWithHalos; // closest to the bottom
+    float *domainParamsBotRow1 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 2) * _offsets.tileWidthWithHalos;
+    float *domainParamsBotRow2 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
+    float *domainParamsBotRow3 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
+    float *domainParamsBotRow4 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 5) * _offsets.tileWidthWithHalos;
+    float *domainParamsBotRow5 = _domainParamsTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 6) * _offsets.tileWidthWithHalos;
 
-    int *domainMapTile = _domainMapTile.data();
-    int *domainMapTopRow2 = _domainMapTile.data();
-    int *domainMapTopRow3 = _domainMapTile.data() + _edgeSizes.localWidth;
-    int *domainMapBotRow3 = _domainMapTile.data() + (_edgeSizes.localHeight - 2) * _edgeSizes.localWidth;
-    int *domainMapBotRow2 = _domainMapTile.data() + (_edgeSizes.localHeight - 1) * _edgeSizes.localWidth;
+    int *domainMapTile = _domainMapTileWithHaloZones.data();
+    int *domainMapTopRow2 = _domainMapTileWithHaloZones.data() + 2 * _offsets.tileWidthWithHalos;
+    int *domainMapTopRow3 = _domainMapTileWithHaloZones.data() + 3 * _offsets.tileWidthWithHalos;
+    int *domainMapBotRow2 = _domainMapTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
+    int *domainMapBotRow3 = _domainMapTileWithHaloZones.data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
     
-    float *tempNextTile = _tempTiles[next].data();
-    float *tempNextTopRow2 = _tempTiles[next].data() + 2 * _offsets.tileWidthWithHalos;
-    float *tempNextTopRow3 = _tempTiles[next].data() + 3 * _offsets.tileWidthWithHalos;
-    float *tempNextBotRow2 = _tempTiles[next].data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
-    float *tempNextBotRow3 = _tempTiles[next].data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
+    float *tempNextTile = _tempTilesWithHaloZones[next].data();
+    float *tempNextTopRow2 = _tempTilesWithHaloZones[next].data() + 2 * _offsets.tileWidthWithHalos;
+    float *tempNextTopRow3 = _tempTilesWithHaloZones[next].data() + 3 * _offsets.tileWidthWithHalos;
+    float *tempNextBotRow2 = _tempTilesWithHaloZones[next].data() + (_offsets.tileHeightWithHalos - 3) * _offsets.tileWidthWithHalos;
+    float *tempNextBotRow3 = _tempTilesWithHaloZones[next].data() + (_offsets.tileHeightWithHalos - 4) * _offsets.tileWidthWithHalos;
 
     // north halo zone
-    for (size_t i = 2; i < _offsets.tileWidthWithHalos - 2; i++)
+    if (!isTopRow())
     {
-        tempNextTopRow2[i] = computePoint(
-            tempCurrentTopRow0[i], tempCurrentTopRow1[i], tempCurrentTopRow3[i], tempCurrentTopRow4[i],
-            tempCurrentTopRow2[i - 2], tempCurrentTopRow2[i - 1], tempCurrentTopRow2[i + 1], tempCurrentTopRow2[i + 2],
-            tempCurrentTopRow2[i],
-            domainParamsTopRow0[i], domainParamsTopRow1[i], domainParamsTopRow3[i], domainParamsTopRow4[i],
-            domainParamsTopRow2[i - 2], domainParamsTopRow2[i - 1], domainParamsTopRow2[i + 1], domainParamsTopRow2[i + 2],
-            domainParamsTopRow2[i],
-            domainMapTopRow2[i]);
-        tempNextTopRow3[i] = computePoint(
-            tempCurrentTopRow1[i], tempCurrentTopRow2[i], tempCurrentTopRow4[i], tempCurrentTopRow5[i],
-            tempCurrentTopRow3[i - 2], tempCurrentTopRow3[i - 1], tempCurrentTopRow3[i + 1], tempCurrentTopRow3[i + 2],
-            tempCurrentTopRow3[i],
-            domainParamsTopRow1[i], domainParamsTopRow2[i], domainParamsTopRow4[i], domainParamsTopRow5[i],
-            domainParamsTopRow3[i - 2], domainParamsTopRow3[i - 1], domainParamsTopRow3[i + 1], domainParamsTopRow3[i + 2],
-            domainParamsTopRow3[i],
-            domainMapTopRow3[i]);
+        for (size_t i = isLeftColumn() ? 4 : 2; i < _offsets.tileWidthWithHalos - (isRightColumn() ? 4 : 2); i++)
+        {
+            tempNextTopRow2[i] = computePoint(
+                tempCurrentTopRow0[i], tempCurrentTopRow1[i], tempCurrentTopRow3[i], tempCurrentTopRow4[i],
+                tempCurrentTopRow2[i - 2], tempCurrentTopRow2[i - 1], tempCurrentTopRow2[i + 1], tempCurrentTopRow2[i + 2],
+                tempCurrentTopRow2[i],
+                domainParamsTopRow0[i], domainParamsTopRow1[i], domainParamsTopRow3[i], domainParamsTopRow4[i],
+                domainParamsTopRow2[i - 2], domainParamsTopRow2[i - 1], domainParamsTopRow2[i + 1], domainParamsTopRow2[i + 2],
+                domainParamsTopRow2[i],
+                domainMapTopRow2[i]);
+            tempNextTopRow3[i] = computePoint(
+                tempCurrentTopRow1[i], tempCurrentTopRow2[i], tempCurrentTopRow4[i], tempCurrentTopRow5[i],
+                tempCurrentTopRow3[i - 2], tempCurrentTopRow3[i - 1], tempCurrentTopRow3[i + 1], tempCurrentTopRow3[i + 2],
+                tempCurrentTopRow3[i],
+                domainParamsTopRow1[i], domainParamsTopRow2[i], domainParamsTopRow4[i], domainParamsTopRow5[i],
+                domainParamsTopRow3[i - 2], domainParamsTopRow3[i - 1], domainParamsTopRow3[i + 1], domainParamsTopRow3[i + 2],
+                domainParamsTopRow3[i],
+                domainMapTopRow3[i]);
+        }
     }
 
-    // west and east halo zone
-    for (size_t i = 2; i < _offsets.tileHeightWithHalos - 2; i++)
+    // west zone
+    if (!isLeftColumn())
     {
-        int northUpperIdx = (i - 2) * _offsets.tileWidthWithHalos + 2;
-        int northIdx = (i - 1) * _offsets.tileWidthWithHalos + 2;
-        int centerIdx = i * _offsets.tileWidthWithHalos + 2;
-        int southIdx = (i + 1) * _offsets.tileWidthWithHalos + 2;
-        int southLowerIdx = (i + 2) * _offsets.tileWidthWithHalos + 2;
-        int westLeftIdx = centerIdx - 2;
-        int westIdx = centerIdx - 1;
-        int eastIdx = centerIdx + 1;
-        int eastRightIdx = centerIdx + 2;
+        for (size_t i = 4; i < _offsets.tileHeightWithHalos - 4; i++)
+        {
+            int northUpperIdx = (i - 2) * _offsets.tileWidthWithHalos + 2;
+            int northIdx = (i - 1) * _offsets.tileWidthWithHalos + 2;
+            int centerIdx = i * _offsets.tileWidthWithHalos + 2;
+            int southIdx = (i + 1) * _offsets.tileWidthWithHalos + 2;
+            int southLowerIdx = (i + 2) * _offsets.tileWidthWithHalos + 2;
+            int westLeftIdx = centerIdx - 2;
+            int westIdx = centerIdx - 1;
+            int eastIdx = centerIdx + 1;
+            int eastRightIdx = centerIdx + 2;
 
-        // west left
-        tempNextTile[centerIdx] = computePoint(
-            tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
-            tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
-            tempCurrentTile[centerIdx],
-            domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
-            domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
-            domainParamsTile[centerIdx],
-            domainMapTile[centerIdx]);
-        
-        northUpperIdx++;
-        northIdx++;
-        centerIdx++;
-        southIdx++;
-        southLowerIdx++;
-        westLeftIdx++;
-        westIdx++;
-        eastIdx++;
-        eastRightIdx++;
+            // west left
+            tempNextTile[centerIdx] = computePoint(
+                tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
+                tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
+                tempCurrentTile[centerIdx],
+                domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
+                domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
+                domainParamsTile[centerIdx],
+                domainMapTile[centerIdx]);
+            
+            northUpperIdx++;
+            northIdx++;
+            centerIdx++;
+            southIdx++;
+            southLowerIdx++;
+            westLeftIdx++;
+            westIdx++;
+            eastIdx++;
+            eastRightIdx++;
 
-        // west right
-        tempNextTile[centerIdx] = computePoint(
-            tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
-            tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
-            tempCurrentTile[centerIdx],
-            domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
-            domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
-            domainParamsTile[centerIdx],
-            domainMapTile[centerIdx]
-        );
+            // west right
+            tempNextTile[centerIdx] = computePoint(
+                tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
+                tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
+                tempCurrentTile[centerIdx],
+                domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
+                domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
+                domainParamsTile[centerIdx],
+                domainMapTile[centerIdx]
+            );
+        }
+    }
 
-        northUpperIdx = (i - 1) * _offsets.tileWidthWithHalos - 3;
-        northIdx = i * _offsets.tileWidthWithHalos - 3;
-        centerIdx = (i + 1) * _offsets.tileWidthWithHalos - 3;
-        southIdx = (i + 2) * _offsets.tileWidthWithHalos - 3;
-        southLowerIdx = (i + 3) * _offsets.tileWidthWithHalos - 3;
-        westLeftIdx = centerIdx - 2;
-        westIdx = centerIdx - 1;
-        eastIdx = centerIdx + 1;
-        eastRightIdx = centerIdx + 2;
+    // east zone
+    if (!isRightColumn())
+    {
+        for (size_t i = 4; i < _offsets.tileHeightWithHalos - 4; i++)
+        {
+            int northUpperIdx = (i - 1) * _offsets.tileWidthWithHalos - 4;
+            int northIdx = i * _offsets.tileWidthWithHalos - 4;
+            int centerIdx = (i + 1) * _offsets.tileWidthWithHalos - 4;
+            int southIdx = (i + 2) * _offsets.tileWidthWithHalos - 4;
+            int southLowerIdx = (i + 3) * _offsets.tileWidthWithHalos - 4;
+            int westLeftIdx = centerIdx - 2;
+            int westIdx = centerIdx - 1;
+            int eastIdx = centerIdx + 1;
+            int eastRightIdx = centerIdx + 2;
 
-        // east left
-        tempNextTile[centerIdx] = computePoint(
-            tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
-            tempNextTile[westLeftIdx], tempNextTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
-            tempCurrentTile[centerIdx],
-            domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
-            domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
-            domainParamsTile[centerIdx],
-            domainMapTile[centerIdx]);
-        
-        northUpperIdx++;
-        northIdx++;
-        centerIdx++;
-        southIdx++;
-        southLowerIdx++;
-        westLeftIdx++;
-        westIdx++;
-        eastIdx++;
-        eastRightIdx++;
-        
-        // east right
-        tempNextTile[centerIdx] = computePoint(
-            tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
-            tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
-            tempCurrentTile[centerIdx],
-            domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
-            domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
-            domainParamsTile[centerIdx],
-            domainMapTile[centerIdx]
-        );
+            // east left
+            tempNextTile[centerIdx] = computePoint(
+                tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
+                tempNextTile[westLeftIdx], tempNextTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
+                tempCurrentTile[centerIdx],
+                domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
+                domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
+                domainParamsTile[centerIdx],
+                domainMapTile[centerIdx]);
+            
+            northUpperIdx++;
+            northIdx++;
+            centerIdx++;
+            southIdx++;
+            southLowerIdx++;
+            westLeftIdx++;
+            westIdx++;
+            eastIdx++;
+            eastRightIdx++;
+            
+            // east right
+            tempNextTile[centerIdx] = computePoint(
+                tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
+                tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
+                tempCurrentTile[centerIdx],
+                domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
+                domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
+                domainParamsTile[centerIdx],
+                domainMapTile[centerIdx]
+            );
+        }
     }
 
     // south halo zone
-    for (size_t i = 2; i < _offsets.tileWidthWithHalos - 2; i++)
+    if (!isBottomRow())
     {
-        tempNextBotRow2[i] = computePoint(
-            tempCurrentBotRow4[i], tempCurrentBotRow3[i], tempCurrentBotRow1[i], tempCurrentBotRow0[i],
-            tempCurrentBotRow2[i - 2], tempCurrentBotRow2[i - 1], tempCurrentBotRow2[i + 1], tempCurrentBotRow2[i + 2],
-            tempCurrentBotRow2[i],
-            domainParamsBotRow4[i], domainParamsBotRow3[i], domainParamsBotRow1[i], domainParamsBotRow0[i],
-            domainParamsBotRow2[i - 2], domainParamsBotRow2[i - 1], domainParamsBotRow2[i + 1], domainParamsBotRow2[i + 2],
-            domainParamsBotRow2[i],
-            domainMapBotRow2[i]);
-        tempNextBotRow3[i] = computePoint(
-            tempCurrentBotRow5[i], tempCurrentBotRow4[i], tempCurrentBotRow2[i], tempCurrentBotRow1[i],
-            tempCurrentBotRow3[i - 2], tempCurrentBotRow3[i - 1], tempCurrentBotRow3[i + 1], tempCurrentBotRow3[i + 2],
-            tempCurrentBotRow3[i],
-            domainParamsBotRow5[i], domainParamsBotRow4[i], domainParamsBotRow2[i], domainParamsBotRow1[i],
-            domainParamsBotRow3[i - 2], domainParamsBotRow3[i - 1], domainParamsBotRow3[i + 1], domainParamsBotRow3[i + 2],
-            domainParamsBotRow3[i],
-            domainMapBotRow3[i]);
+        for (size_t i = isLeftColumn() ? 4 : 2; i < _offsets.tileWidthWithHalos - (isRightColumn() ? 4 : 2); i++)
+        {
+            tempNextBotRow2[i] = computePoint(
+                tempCurrentBotRow4[i], tempCurrentBotRow3[i], tempCurrentBotRow1[i], tempCurrentBotRow0[i],
+                tempCurrentBotRow2[i - 2], tempCurrentBotRow2[i - 1], tempCurrentBotRow2[i + 1], tempCurrentBotRow2[i + 2],
+                tempCurrentBotRow2[i],
+                domainParamsBotRow4[i], domainParamsBotRow3[i], domainParamsBotRow1[i], domainParamsBotRow0[i],
+                domainParamsBotRow2[i - 2], domainParamsBotRow2[i - 1], domainParamsBotRow2[i + 1], domainParamsBotRow2[i + 2],
+                domainParamsBotRow2[i],
+                domainMapBotRow2[i]);
+            tempNextBotRow3[i] = computePoint(
+                tempCurrentBotRow5[i], tempCurrentBotRow4[i], tempCurrentBotRow2[i], tempCurrentBotRow1[i],
+                tempCurrentBotRow3[i - 2], tempCurrentBotRow3[i - 1], tempCurrentBotRow3[i + 1], tempCurrentBotRow3[i + 2],
+                tempCurrentBotRow3[i],
+                domainParamsBotRow5[i], domainParamsBotRow4[i], domainParamsBotRow2[i], domainParamsBotRow1[i],
+                domainParamsBotRow3[i - 2], domainParamsBotRow3[i - 1], domainParamsBotRow3[i + 1], domainParamsBotRow3[i + 2],
+                domainParamsBotRow3[i],
+                domainMapBotRow3[i]);
+        }
     }
 }
 
@@ -965,8 +986,8 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
 
 void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
 {
-    float *tempCurrentTile = _tempTiles[current].data();
-    float *tempNextTile = _tempTiles[next].data();
+    float *tempCurrentTile = _tempTilesWithHaloZones[current].data();
+    float *tempNextTile = _tempTilesWithHaloZones[next].data();
 
     for (size_t i = 4; i < _offsets.tileHeightWithHalos - 4; i++)
     {
@@ -980,7 +1001,7 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
         const int eastIdx = centerIdx + 1;
         const int eastRightIdx = centerIdx + 2;
 
-        for (size_t j = 4; j < _offsets.tileWidthWithHalos; j++)
+        for (size_t j = 4; j < _offsets.tileWidthWithHalos - 4; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
@@ -989,7 +1010,7 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
                 _domainParamsTile[northUpperIdx + j], _domainParamsTile[northIdx + j], _domainParamsTile[southIdx + j], _domainParamsTile[southLowerIdx + j],
                 _domainParamsTile[westLeftIdx + j], _domainParamsTile[westIdx + j], _domainParamsTile[eastIdx + j], _domainParamsTile[eastRightIdx + j],
                 _domainParamsTile[centerIdx + j],
-                _domainMapTile[centerIdx + j]);
+                _domainMapTileWithHaloZones[centerIdx + j]);
         }
     }
 }
@@ -1035,7 +1056,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t it
         int midColIdx = _offsets.tileWidthWithHalos >> 1;
         for (size_t i = 2; i < _offsets.tileHeightWithHalos - 2; i++)
         {
-            sum += _tempTilesAndHaloZones[1][i * _offsets.tileWidthWithHalos + midColIdx];
+            sum += _tempTilesWithHaloZones[!(iteration & 1)][i * _offsets.tileWidthWithHalos + midColIdx + 2];
         }
         sum /= _edgeSizes.localHeight;
     }
@@ -1043,7 +1064,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t it
     {
         for (size_t i = 2; i < _offsets.tileHeightWithHalos - 2; i++)
         {
-            sum += _tempTilesAndHaloZones[1][i * _offsets.tileWidthWithHalos + 2];
+            sum += _tempTilesWithHaloZones[!(iteration & 1)][i * _offsets.tileWidthWithHalos + 1];
         }
         sum /= _edgeSizes.localHeight;
     }
@@ -1081,10 +1102,10 @@ void ParallelHeatSolver::startHaloExchangeP2P_Raw()
                             &_haloExchangeRequest);
 }
 
-void ParallelHeatSolver::startHaloExchangeP2P_DataType(bool current, bool next)
+void ParallelHeatSolver::startHaloExchangeP2P_DataType(bool next)
 {
-    MPI_Ineighbor_alltoallw(_tempTilesAndHaloZones[next].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
-                            _tempTilesAndHaloZones[current].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm, 
+    MPI_Ineighbor_alltoallw(_tempTilesWithHaloZones[next].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
+                            _tempTilesWithHaloZones[next].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm, 
                             &_haloExchangeRequest);
 }
 
@@ -1178,20 +1199,21 @@ void ParallelHeatSolver::scatterInitialData_Raw()
 void ParallelHeatSolver::scatterInitialData_DataType()
 {
     MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
-                 _tempTilesAndHaloZones[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
-    MPI_Neighbor_alltoallw(_tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
-                           _tempTilesAndHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
+                 _tempTilesWithHaloZones[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
+    MPI_Neighbor_alltoallw(_tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
+                           _tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
+    copy(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), _tempTilesWithHaloZones[1].begin());
     
     MPI_Scatterv(mMaterialProps.getDomainParameters().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
-                 _domainParamsTileAndHaloZones.data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
-    MPI_Neighbor_alltoallw(_domainParamsTileAndHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
-                           _domainParamsTileAndHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
+                 _domainParamsTileWithHaloZones.data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
+    MPI_Neighbor_alltoallw(_domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
+                           _domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
     
-    MPI_Scatterv(mMaterialProps.getDomainMap().data(), _scatterCounts.data(), _scatterDisplacements.data(), _intMapTileWithoutHaloZonesResized,
-                 _domainMapTile.data(), 1, _intMapTileWithoutHaloZones, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(mMaterialProps.getDomainMap().data(), _scatterCounts.data(), _scatterDisplacements.data(), _intTileWithoutHaloZonesResized,
+                 _domainMapTileWithHaloZones.data(), 1, _intTileWithHaloZones, 0, MPI_COMM_WORLD);
 }
 
-void ParallelHeatSolver::gatherComputedTempData(bool final, vector<float, AlignedAllocator<float>> &outResult)
+void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, AlignedAllocator<float>> &outResult)
 {
     if (_worldRank == 0)
     {
@@ -1217,6 +1239,12 @@ void ParallelHeatSolver::gatherComputedTempData(bool final, vector<float, Aligne
         MPI_Gather(_scatterGatherTempRow.data(), _edgeSizes.global * _edgeSizes.localHeight, MPI_FLOAT,
                    outResult.data(), _edgeSizes.global * _edgeSizes.localHeight, MPI_FLOAT, 0, _scatterGatherColComm);
     }
+}
+
+void ParallelHeatSolver::gatherComputedTempData_DataType(bool final, vector<float, AlignedAllocator<float>> &outResult)
+{
+    MPI_Gatherv(_tempTilesWithHaloZones[final].data(), 1, _floatTileWithHaloZones,
+                outResult.data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized, 0, MPI_COMM_WORLD);
 }
 
 void ParallelHeatSolver::prepareInitialHaloZones()
@@ -1270,10 +1298,15 @@ void ParallelHeatSolver::exchangeInitialHaloZones()
 
 void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 {
-#define DATA_TYPE_EXCHANGE 0
-
+#define DATA_TYPE_EXCHANGE 1
+#if DATA_TYPE_EXCHANGE
     scatterInitialData_DataType();
-  
+    //for (int i = 0; i < _worldSize; i++)
+    //{
+    //    printTile(i, _tempTilesWithHaloZones[0], 4);
+    //    printDomainMap(i);
+    //}
+
     double startTime = MPI_Wtime();
     // run the simulation
     for (size_t iter = 0; iter < mSimulationProps.getNumIterations(); iter++)
@@ -1285,7 +1318,7 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         computeTempHaloZones_DataType(current, next);
 
         // start the halo zone exchange (async P2P communication, or RMA communication if enabled)
-        startHaloExchangeP2P_DataType(current, next);
+        startHaloExchangeP2P_DataType(next);
 
         // compute the rest of the tile (inner part)
         computeTempTile_DataType(current, next);
@@ -1293,7 +1326,16 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         // wait for all halo zone exchanges to finalize
         awaitHaloExchangeP2P();
 
-        if (shouldStoreData(iter))
+        /*if (iter == 3)
+        {
+            for (int i = 0; i < _worldSize; i++)
+            {
+                printTile(i, _tempTilesWithHaloZones[next], 4);
+            }
+            return;
+        }*/
+
+        /*if (shouldStoreData(iter))
         {
             if (mSimulationProps.useParallelIO())
             {
@@ -1303,15 +1345,19 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
             {
                 storeDataIntoFileSequential(mFileHandle, iter, _tempTiles[next].data());
             }
-        }
+        }*/
 
         if (shouldPrintProgress(iter) && shouldComputeMiddleColumnAverageTemperature())
         {
             // compute and print the middle column average temperature using reduction of partial averages
-            computeAndPrintMidColAverageParallel_Raw(iter);
+            computeAndPrintMidColAverageParallel_DataType(iter);
         }
     }
     double elapsedTime = MPI_Wtime() - startTime;
+
+    // retrieve the final temperature from all the nodes to a single matrix
+    gatherComputedTempData_DataType(mSimulationProps.getNumIterations() & 1, outResult);
+#endif
 
 #define RAW_EXCHANGE 0
 #if RAW_EXCHANGE
@@ -1373,7 +1419,7 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
     double elapsedTime = MPI_Wtime() - startTime;
 
     // retrieve the final temperature from all the nodes to a single matrix
-    gatherComputedTempData(mSimulationProps.getNumIterations() & 1, outResult);
+    gatherComputedTempData_Raw(mSimulationProps.getNumIterations() & 1, outResult);
 
     // compute the final average temperature and print the final report
     computeAndPrintMidColAverageSequential(elapsedTime, outResult);

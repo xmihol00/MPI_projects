@@ -14,6 +14,7 @@
 
 #include <array>
 #include <ios>
+#include <iostream>
 
 #include "SequentialHeatSolver.hpp"
 
@@ -74,6 +75,22 @@ void SequentialHeatSolver::run(std::vector<float, AlignedAllocator<float>>& outR
                      coolerTemp);
       }
     }
+
+    /*if (iter == 3)
+    {
+      std::cout << std::setprecision(7) << fixed;
+      std::cout << std::setw(9);
+
+      for (std::size_t i = 0; i < mMaterialProps.getEdgeSize(); ++i)
+      {
+        for (std::size_t j = 0; j < mMaterialProps.getEdgeSize(); ++j)
+        {
+          std::cout << workTempArrays[0][i * mMaterialProps.getEdgeSize() + j] << " ";
+        }
+        std::cout << std::endl;
+      }
+      exit(0);
+    }*/
 
     // 5. Compute average temperature in the middle column of the domain.
     middleColAvgTemp = computeMiddleColAvgTemp(workTempArrays[0]);
