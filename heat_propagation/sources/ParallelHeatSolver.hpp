@@ -334,12 +334,12 @@ private:
                 std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
                 std::cerr << "Tile size: " << tile.size() << std::endl;
                 //std::cerr << "Neighbours: " << _neighbors[0] << " " << _neighbors[1] << " " << _neighbors[2] << " " << _neighbors[3] << std::endl;
-                std::cerr << std::setprecision(2) << std::fixed;
+                std::cerr << std::setprecision(7) << std::fixed;
                 for (int i = 0; i < _edgeSizes.localHeight + offset; i++)
                 {
                     for (int j = 0; j < _edgeSizes.localWidth + offset; j++)
                     {
-                        std::cerr << std::setw(4) << tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
+                        std::cerr << std::setw(9) << tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -452,7 +452,7 @@ inline constexpr float ParallelHeatSolver::computePoint(
         domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
     ) == 0)
     {
-        std::cerr << "Rank " << _worldRank << " zero division" << std::endl;
+        std::cerr << "Rank " << _worldRank << " zero division " << frac << std::endl;
     }
 
     float pointTemp = frac * (

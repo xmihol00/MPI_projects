@@ -898,7 +898,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
             // east left
             tempNextTile[centerIdx] = computePoint(
                 tempCurrentTile[northUpperIdx], tempCurrentTile[northIdx], tempCurrentTile[southIdx], tempCurrentTile[southLowerIdx],
-                tempNextTile[westLeftIdx], tempNextTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
+                tempCurrentTile[westLeftIdx], tempCurrentTile[westIdx], tempCurrentTile[eastIdx], tempCurrentTile[eastRightIdx],
                 tempCurrentTile[centerIdx],
                 domainParamsTile[northUpperIdx], domainParamsTile[northIdx], domainParamsTile[southIdx], domainParamsTile[southLowerIdx],
                 domainParamsTile[westLeftIdx], domainParamsTile[westIdx], domainParamsTile[eastIdx], domainParamsTile[eastRightIdx],
@@ -988,6 +988,8 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
 {
     float *tempCurrentTile = _tempTilesWithHaloZones[current].data();
     float *tempNextTile = _tempTilesWithHaloZones[next].data();
+    float *domainParamsTile = _domainParamsTileWithHaloZones.data();
+    int *domainMapTile = _domainMapTileWithHaloZones.data();
 
     for (size_t i = 4; i < _offsets.tileHeightWithHalos - 4; i++)
     {
@@ -1007,10 +1009,10 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
                 tempCurrentTile[westLeftIdx + j], tempCurrentTile[westIdx + j], tempCurrentTile[eastIdx + j], tempCurrentTile[eastRightIdx + j],
                 tempCurrentTile[centerIdx + j],
-                _domainParamsTile[northUpperIdx + j], _domainParamsTile[northIdx + j], _domainParamsTile[southIdx + j], _domainParamsTile[southLowerIdx + j],
-                _domainParamsTile[westLeftIdx + j], _domainParamsTile[westIdx + j], _domainParamsTile[eastIdx + j], _domainParamsTile[eastRightIdx + j],
-                _domainParamsTile[centerIdx + j],
-                _domainMapTileWithHaloZones[centerIdx + j]);
+                domainParamsTile[northUpperIdx + j], domainParamsTile[northIdx + j], domainParamsTile[southIdx + j], domainParamsTile[southLowerIdx + j],
+                domainParamsTile[westLeftIdx + j], domainParamsTile[westIdx + j], domainParamsTile[eastIdx + j], domainParamsTile[eastRightIdx + j],
+                domainParamsTile[centerIdx + j],
+                domainMapTile[centerIdx + j]);
         }
     }
 }
@@ -1200,17 +1202,22 @@ void ParallelHeatSolver::scatterInitialData_DataType()
 {
     MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _tempTilesWithHaloZones[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
+    //copy(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), _tempTilesWithHaloZones[1].begin());
     MPI_Neighbor_alltoallw(_tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
                            _tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
     copy(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), _tempTilesWithHaloZones[1].begin());
+    //fill(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), 1.0f);
+    //fill(_tempTilesWithHaloZones[1].begin(), _tempTilesWithHaloZones[1].end(), 1.0f);
     
     MPI_Scatterv(mMaterialProps.getDomainParameters().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _domainParamsTileWithHaloZones.data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
     MPI_Neighbor_alltoallw(_domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
                            _domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
+    //fill(_domainParamsTileWithHaloZones.begin(), _domainParamsTileWithHaloZones.end(), 1.0f);
     
     MPI_Scatterv(mMaterialProps.getDomainMap().data(), _scatterCounts.data(), _scatterDisplacements.data(), _intTileWithoutHaloZonesResized,
                  _domainMapTileWithHaloZones.data(), 1, _intTileWithHaloZones, 0, MPI_COMM_WORLD);
+    //fill(_domainMapTileWithHaloZones.begin(), _domainMapTileWithHaloZones.end(), 1);
 }
 
 void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, AlignedAllocator<float>> &outResult)
@@ -1301,11 +1308,20 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 #define DATA_TYPE_EXCHANGE 1
 #if DATA_TYPE_EXCHANGE
     scatterInitialData_DataType();
-    //for (int i = 0; i < _worldSize; i++)
-    //{
-    //    printTile(i, _tempTilesWithHaloZones[0], 4);
-    //    printDomainMap(i);
-    //}
+    /*for (int i = 0; i < _worldSize; i++)
+    {
+        printTile(i, _tempTilesWithHaloZones[0], 4);
+        printTile(i, _tempTilesWithHaloZones[1], 4);
+    }*/
+    /*for (int i = 0; i < _worldSize; i++)
+    {
+        printTile(i, _tempTilesWithHaloZones[1], 4);
+    }*/
+    /*for (int i = 0; i < _worldSize; i++)
+    {
+        printTile(i, _domainParamsTileWithHaloZones, 4);
+    }*/
+    //return;
 
     double startTime = MPI_Wtime();
     // run the simulation
