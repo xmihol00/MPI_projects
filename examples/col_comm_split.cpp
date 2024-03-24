@@ -28,8 +28,8 @@ int main(int argc, char **argv)
     }
     else
     {
-        color = world_rank % NUMBER_OF_COLS; // grouping values with stride 'col_size', e.g. 0, 3, 6, ... for col_size == 3
-        key = world_rank / col_size;   // defining the rank per rows, i.e. all processes in the first row are rank 0 in the new column, in second row rank 1 etc.
+        color = world_rank % NUMBER_OF_COLS; // !!! grouping values with stride 'col_size', e.g. 0, 3, 6, ... for col_size == 3 
+        key = world_rank / NUMBER_OF_COLS;   // !!! defining the rank per rows, i.e. all processes in the first row are rank 0 in the new column, in second row rank 1 etc.
     }
 
     MPI_Comm col_comm;

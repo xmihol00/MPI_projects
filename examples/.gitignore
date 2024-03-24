@@ -3,3 +3,7 @@ col_comm_split
 tile_comm_split
 col_datatype
 row_datatype
+tile_datatype
+col_scatter
+tile_scatter
+struct_scatter
