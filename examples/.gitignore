@@ -7,3 +7,4 @@ tile_datatype
 col_scatter
 tile_scatter
 struct_scatter
+group_comm_split

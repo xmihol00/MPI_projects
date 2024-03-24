@@ -41,3 +41,8 @@ ts:
 ss:
 	$(CC) -o struct_scatter struct_scatter.cpp
 	mpirun -np 4 --oversubscribe ./struct_scatter
+
+gcs:
+	$(CC) -o group_comm_split group_comm_split.cpp
+	mpirun -np $N --oversubscribe ./group_comm_split
+
