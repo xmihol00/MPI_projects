@@ -138,7 +138,7 @@ void ParallelHeatSolver::initDataDistribution()
         else // other columns
         {
             MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_scatterGatherColComm);
-            _scatterGatherColComm = MPI_COMM_NULL;
+            _scatterGatherColComm = MPI_COMM_NULL; 
         }
     }
     else
@@ -1202,22 +1202,17 @@ void ParallelHeatSolver::scatterInitialData_DataType()
 {
     MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _tempTilesWithHaloZones[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
-    //copy(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), _tempTilesWithHaloZones[1].begin());
     MPI_Neighbor_alltoallw(_tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
                            _tempTilesWithHaloZones[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
     copy(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), _tempTilesWithHaloZones[1].begin());
-    //fill(_tempTilesWithHaloZones[0].begin(), _tempTilesWithHaloZones[0].end(), 1.0f);
-    //fill(_tempTilesWithHaloZones[1].begin(), _tempTilesWithHaloZones[1].end(), 1.0f);
     
     MPI_Scatterv(mMaterialProps.getDomainParameters().data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _domainParamsTileWithHaloZones.data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
     MPI_Neighbor_alltoallw(_domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZone,
                            _domainParamsTileWithHaloZones.data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZone, _topologyComm);
-    //fill(_domainParamsTileWithHaloZones.begin(), _domainParamsTileWithHaloZones.end(), 1.0f);
     
     MPI_Scatterv(mMaterialProps.getDomainMap().data(), _scatterCounts.data(), _scatterDisplacements.data(), _intTileWithoutHaloZonesResized,
                  _domainMapTileWithHaloZones.data(), 1, _intTileWithHaloZones, 0, MPI_COMM_WORLD);
-    //fill(_domainMapTileWithHaloZones.begin(), _domainMapTileWithHaloZones.end(), 1);
 }
 
 void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, AlignedAllocator<float>> &outResult)
