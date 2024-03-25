@@ -46,3 +46,6 @@ gcs:
 	$(CC) -o group_comm_split group_comm_split.cpp
 	mpirun -np $N --oversubscribe ./group_comm_split
 
+srp:
+	$(CC) -o scan_reduce_pack scan_reduce_pack.cpp
+	mpirun -np $N --oversubscribe ./scan_reduce_pack

@@ -39,11 +39,11 @@ int main(int argc, char **argv)
     MPI_Aint add_d1;
     MPI_Get_address(&(structs[0].d1), &add_d1); // !!!
     MPI_Aint add_c1;
-    MPI_Get_address(&(structs[0].c1), &add_c1); // !!!
+    MPI_Get_address(&(structs[0].c1), &add_c1);
     MPI_Aint add_i1;
-    MPI_Get_address(&(structs[0].i1), &add_i1); // !!!
+    MPI_Get_address(&(structs[0].i1), &add_i1);
     MPI_Aint add_f1;
-    MPI_Get_address(&(structs[0].f1), &add_f1); // !!!
+    MPI_Get_address(&(structs[0].f1), &add_f1);
 
     MPI_Datatype types[2] = {MPI_CHAR, MPI_INT};
     int lengths[2] = {1, 1};

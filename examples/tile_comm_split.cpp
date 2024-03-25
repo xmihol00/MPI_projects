@@ -33,7 +33,7 @@ int main(int argc, char **argv)
         int tile_row = world_rank / (TILE_HEIGHT * TILE_WIDTH * TILES_PER_ROW);
         int tile_col = (world_rank % (TILE_WIDTH * TILES_PER_ROW)) / TILE_WIDTH;
         int row = world_rank / (TILE_WIDTH * TILES_PER_ROW);
-        int col = world_rank % (TILE_WIDTH * TILES_PER_ROW);
+        int col = world_rank % TILE_WIDTH;
         color = tile_row * TILES_PER_ROW + tile_col;
         key = row * TILE_WIDTH + col;
     }
