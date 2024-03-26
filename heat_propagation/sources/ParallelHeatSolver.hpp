@@ -25,6 +25,9 @@
 #include "HeatSolverBase.hpp"
 #include <iomanip>
 
+#define DATA_TYPE_EXCHANGE (true)
+#define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
+
 /**
  * @brief The ParallelHeatSolver class implements parallel MPI based heat
  *        equation solver in 2D using 2D block grid decomposition.
@@ -145,20 +148,23 @@ private:
     /**
      * @brief Await halo exchange using point-to-point communication.
      */
-    void awaitHaloExchangeP2P();
+    void awaitHaloExchangeP2P_Raw();
+    void awaitHaloExchangeP2P_DataType(bool next);
 
     /**
      * @brief Start halo exchange using RMA communication.
      * @param localData Local data to be exchanged.
      * @param window    MPI_Win object to be used for RMA communication.
      */
-    void startHaloExchangeRMA();
+    void startHaloExchangeRMA_Raw();
+    void startHaloExchangeRMA_DataType(bool next);
 
     /**
      * @brief Await halo exchange using RMA communication.
      * @param window MPI_Win object to be used for RMA communication.
      */
-    void awaitHaloExchangeRMA();
+    void awaitHaloExchangeRMA_Raw();
+    void awaitHaloExchangeRMA_DataType(bool next);
 
     /**
      * @brief Opens output HDF5 file for sequential access by MASTER rank only.
@@ -255,7 +261,7 @@ private:
 
     MPI_Request _haloExchangeRequest;
 
-    MPI_Win _haloExchangeWindow;
+    MPI_Win _haloExchangeWindows[2];
 
     MPI_Datatype _floatTileWithoutHaloZones;
     MPI_Datatype _floatTileWithoutHaloZonesResized;
@@ -265,8 +271,9 @@ private:
     MPI_Datatype _intTileWithoutHaloZonesResized;
     MPI_Datatype _intTileWithHaloZones;
 
-    MPI_Datatype _floatSendHaloZone[4];
-    MPI_Datatype _floatRecvHaloZone[4];
+    MPI_Datatype _floatSendHaloZoneTypes[4];
+    MPI_Datatype _floatRecvHaloZoneTypes[4];
+    MPI_Datatype _floatInverseRecvHaloZoneTypes[4];
 
     struct Decomposition
     {
