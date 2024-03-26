@@ -1215,13 +1215,8 @@ void ParallelHeatSolver::scatterInitialData_DataType()
                  _domainMapTileWithHaloZones.data(), 1, _intTileWithHaloZones, 0, MPI_COMM_WORLD);
 }
 
-void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, AlignedAllocator<float>> &outResult)
+void ParallelHeatSolver::gatherComputedTempData_Raw(bool tile, vector<float, AlignedAllocator<float>> &outResult)
 {
-    if (_worldRank == 0)
-    {
-        outResult.resize(_edgeSizes.global * _edgeSizes.global);
-    }
-
     float *rowTemp = outResult.data();
     if (_scatterGatherColComm != MPI_COMM_NULL)
     {
@@ -1231,7 +1226,7 @@ void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, Al
     // gather the computed data from each row of nodes to the first column node
     for (size_t i = 0, j = 0; i < _edgeSizes.localHeight * _edgeSizes.global; i += _edgeSizes.global, j += _edgeSizes.localWidth)
     {
-        MPI_Gather(_tempTiles[final].data() + j, _edgeSizes.localWidth, MPI_FLOAT,
+        MPI_Gather(_tempTiles[tile].data() + j, _edgeSizes.localWidth, MPI_FLOAT,
                    rowTemp + i, _edgeSizes.localWidth, MPI_FLOAT, 0, _scatterGatherRowComm);
     }
 
@@ -1243,9 +1238,9 @@ void ParallelHeatSolver::gatherComputedTempData_Raw(bool final, vector<float, Al
     }
 }
 
-void ParallelHeatSolver::gatherComputedTempData_DataType(bool final, vector<float, AlignedAllocator<float>> &outResult)
+void ParallelHeatSolver::gatherComputedTempData_DataType(bool tile, vector<float, AlignedAllocator<float>> &outResult)
 {
-    MPI_Gatherv(_tempTilesWithHaloZones[final].data(), 1, _floatTileWithHaloZones,
+    MPI_Gatherv(_tempTilesWithHaloZones[tile].data(), 1, _floatTileWithHaloZones,
                 outResult.data(), _scatterCounts.data(), _scatterDisplacements.data(), _floatTileWithoutHaloZonesResized, 0, MPI_COMM_WORLD);
 }
 
@@ -1300,6 +1295,11 @@ void ParallelHeatSolver::exchangeInitialHaloZones()
 
 void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 {
+    if (_worldRank == 0)
+    {
+        outResult.resize(_edgeSizes.global * _edgeSizes.global);
+    }
+
 #define DATA_TYPE_EXCHANGE 1
 #if DATA_TYPE_EXCHANGE
     scatterInitialData_DataType();
@@ -1346,17 +1346,21 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
             return;
         }*/
 
-        /*if (shouldStoreData(iter))
+        if (shouldStoreData(iter))
         {
             if (mSimulationProps.useParallelIO())
             {
-                storeDataIntoFileParallel(mFileHandle, iter, _tempTiles[next].data());
+                storeDataIntoFileParallel(iter, 2, _tempTilesWithHaloZones[next].data());
             }
             else
             {
-                storeDataIntoFileSequential(mFileHandle, iter, _tempTiles[next].data());
+                gatherComputedTempData_DataType(next, outResult);
+                if (_worldRank == 0)
+                {
+                    storeDataIntoFileSequential(iter, outResult.data());
+                }
             }
-        }*/
+        }
 
         if (shouldPrintProgress(iter) && shouldComputeMiddleColumnAverageTemperature())
         {
@@ -1368,9 +1372,12 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
     // retrieve the final temperature from all the nodes to a single matrix
     gatherComputedTempData_DataType(mSimulationProps.getNumIterations() & 1, outResult);
+
+    // compute the final average temperature and print the final report
+    computeAndPrintMidColAverageSequential(elapsedTime, outResult);
 #endif
 
-#define RAW_EXCHANGE 0
+#define RAW_EXCHANGE !DATA_TYPE_EXCHANGE
 #if RAW_EXCHANGE
     // scatter the initial data across the nodes from the root node
     scatterInitialData_Raw();
@@ -1413,11 +1420,15 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         {
             if (mSimulationProps.useParallelIO())
             {
-                storeDataIntoFileParallel(mFileHandle, iter, _tempTiles[next].data());
+                storeDataIntoFileParallel(iter, 0, _tempTiles[next].data());
             }
             else
             {
-                storeDataIntoFileSequential(mFileHandle, iter, _tempTiles[next].data());
+                gatherComputedTempData_Raw(next, outResult);
+                if (_worldRank == 0)
+                {
+                    storeDataIntoFileSequential(iter, outResult.data());
+                }
             }
         }
 
@@ -1453,11 +1464,9 @@ void ParallelHeatSolver::openOutputFileSequential()
     }
 }
 
-void ParallelHeatSolver::storeDataIntoFileSequential(hid_t fileHandle,
-                                                     size_t iteration,
-                                                     const float *globalData)
+void ParallelHeatSolver::storeDataIntoFileSequential(size_t iteration, const float *globalData)
 {
-    storeDataIntoFile(fileHandle, iteration, globalData);
+    storeDataIntoFile(mFileHandle, iteration, globalData);
 }
 
 void ParallelHeatSolver::openOutputFileParallel()
@@ -1484,24 +1493,26 @@ void ParallelHeatSolver::openOutputFileParallel()
 #endif /* H5_HAVE_PARALLEL */
 }
 
-void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle, size_t iteration, const float *localData)
+void ParallelHeatSolver::storeDataIntoFileParallel(size_t iteration, int halloOffset, const float *localData)
 {
-    if (fileHandle == H5I_INVALID_HID)
+    if (mFileHandle == H5I_INVALID_HID)
     {
         return;
     }
 
 #ifdef H5_HAVE_PARALLEL
-    array<hsize_t, 2> gridSize{static_cast<hsize_t>(mMaterialProps.getEdgeSize()), static_cast<hsize_t>(mMaterialProps.getEdgeSize())};
-    array<hsize_t, 2> localGridSize{static_cast<hsize_t>(_edgeSizes.localHeight), static_cast<hsize_t>(_edgeSizes.localWidth)};
-    array<hsize_t, 2> tileOffset{static_cast<hsize_t>(_edgeSizes.localHeight * (_worldRank / _decomposition.nx)),
-                                 static_cast<hsize_t>(_edgeSizes.localWidth * (_worldRank % _decomposition.nx))};
-    array<hsize_t, 2> blockCount{1, 1};
+    array<hsize_t, 2> gridSizes{static_cast<hsize_t>(mMaterialProps.getEdgeSize()), static_cast<hsize_t>(mMaterialProps.getEdgeSize())};
+    array<hsize_t, 2> localGridSizes{static_cast<hsize_t>(_edgeSizes.localHeight + 2 * halloOffset), static_cast<hsize_t>(_edgeSizes.localWidth + 2 * halloOffset)};
+    array<hsize_t, 2> localGridSizesWithoutHalo{static_cast<hsize_t>(_edgeSizes.localHeight), static_cast<hsize_t>(_edgeSizes.localWidth)};
+    array<hsize_t, 2> tileOffsets{static_cast<hsize_t>(_edgeSizes.localHeight * (_worldRank / _decomposition.nx)),
+                                  static_cast<hsize_t>(_edgeSizes.localWidth * (_worldRank % _decomposition.nx))};
+    array<hsize_t, 2> halloOffsets{halloOffset, halloOffset};
+    array<hsize_t, 2> blockCounts{1, 1};
 
     // Create new HDF5 group in the output file
     string groupName = "Timestep_" + to_string(iteration / mSimulationProps.getWriteIntensity());
 
-    Hdf5GroupHandle groupHandle(H5Gcreate(fileHandle, groupName.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
+    Hdf5GroupHandle groupHandle(H5Gcreate(mFileHandle, groupName.c_str(), H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT));
     
     {
         /**********************************************************************************************************************/
@@ -1513,20 +1524,21 @@ void ParallelHeatSolver::storeDataIntoFileParallel(hid_t fileHandle, size_t iter
         static constexpr string_view dataSetName{"Temperature"};
 
         Hdf5PropertyListHandle datasetPropListHandle(H5Pcreate(H5P_DATASET_CREATE));
-        H5Pset_chunk(datasetPropListHandle, 2, localGridSize.data());
+        H5Pset_chunk(datasetPropListHandle, 2, localGridSizesWithoutHalo.data());
         /**********************************************************************************************************************/
         /*                            Create dataset property list to set up chunking.                                        */
         /*                Set up chunking for collective write operation in datasetPropListHandle variable.                   */
         /**********************************************************************************************************************/
 
-        Hdf5DataspaceHandle dataSpaceHandle(H5Screate_simple(2, gridSize.data(), nullptr));
+        Hdf5DataspaceHandle dataSpaceHandle(H5Screate_simple(2, gridSizes.data(), nullptr));
         Hdf5DatasetHandle dataSetHandle(H5Dcreate(groupHandle, dataSetName.data(),
                                                   H5T_NATIVE_FLOAT, dataSpaceHandle,
                                                   H5P_DEFAULT, datasetPropListHandle,
                                                   H5P_DEFAULT));
+        H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffsets.data(), nullptr, blockCounts.data(), localGridSizesWithoutHalo.data());
 
-        Hdf5DataspaceHandle memSpaceHandle(H5Screate_simple(2, localGridSize.data(), nullptr));
-        H5Sselect_hyperslab(dataSpaceHandle, H5S_SELECT_SET, tileOffset.data(), nullptr, blockCount.data(), localGridSize.data());
+        Hdf5DataspaceHandle memSpaceHandle(H5Screate_simple(2, localGridSizes.data(), nullptr));
+        H5Sselect_hyperslab(memSpaceHandle, H5S_SELECT_SET, halloOffsets.data(), nullptr, blockCounts.data(), localGridSizesWithoutHalo.data());
 
         /**********************************************************************************************************************/
         /*                Create memory dataspace representing tile in the memory (set up memSpaceHandle).                    */

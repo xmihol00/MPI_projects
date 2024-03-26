@@ -169,12 +169,11 @@ private:
     /**
      * @brief Stores current state of the simulation into the output file.
      *        NOTE: Only MASTER (rank = 0) should call this method.
-     * @param fileHandle HDF5 file handle to be used for the writting operation.
      * @param iteration  Integer denoting current iteration number.
      * @param data       Square 2D array of edgeSize x edgeSize elements containing
      *                   simulation state to be stored in the file.
      */
-    void storeDataIntoFileSequential(hid_t fileHandle, std::size_t iteration, const float *globalData);
+    void storeDataIntoFileSequential(std::size_t iteration, const float *globalData);
 
     /**
      * @brief Opens output HDF5 file for parallel/cooperative access.
@@ -185,13 +184,12 @@ private:
     /**
      * @brief Stores current state of the simulation into the output file.
      *        NOTE: All processes which opened the file HAVE to call this method collectively.
-     * @param fileHandle HDF5 file handle to be used for the writting operation.
      * @param iteration  Integer denoting current iteration number.
      * @param localData  Local 2D array (tile) of mLocalTileSize[0] x mLocalTileSize[1] elements
      *                   to be stored at tile specific position in the output file.
      *                   This method skips halo zones of the tile and stores only relevant data.
      */
-    void storeDataIntoFileParallel(hid_t fileHandle, std::size_t iteration, const float *localData);
+    void storeDataIntoFileParallel(std::size_t iteration, int halloOffset, const float *localData);
 
     /**
      * @brief Determines if the process should compute average temperature of the middle column.
