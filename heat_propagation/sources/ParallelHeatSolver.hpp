@@ -25,7 +25,7 @@
 #include "HeatSolverBase.hpp"
 #include <iomanip>
 
-#define DATA_TYPE_EXCHANGE (1)
+#define DATA_TYPE_EXCHANGE (0)
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 /**
@@ -85,16 +85,6 @@ private:
      * @brief Deinitialize the grid topology.
      */
     void deinitGridTopology();
-
-    /**
-     * @brief Initialize variables and MPI datatypes for data scattering and gathering.
-     */
-    void initDataDistribution();
-
-    /**
-     * @brief Deinitialize variables and MPI datatypes for data scattering and gathering.
-     */
-    void deinitDataDistribution();
 
     /**
      * @brief Allocate memory for local tiles.
@@ -217,13 +207,13 @@ private:
 
     void deinitDataTypes();
 
-    inline constexpr bool isTopRow();
+    inline constexpr bool isNotTopRow();
 
-    inline constexpr bool isBottomRow();
+    inline constexpr bool isNotBottomRow();
 
-    inline constexpr bool isLeftColumn();
+    inline constexpr bool isNotLeftColumn();
 
-    inline constexpr bool isRightColumn();
+    inline constexpr bool isNotRightColumn();
 
     inline constexpr float computePoint(
         float tempNorthUpper, float tempNorthLower, float tempSouthLower, float tempSouthUpper, 
@@ -243,7 +233,6 @@ private:
 
     /// @brief Process rank in the global communicator (MPI_COMM_WORLD).
     int _worldRank;
-    int _rowRank;
     int _midColRank;
 
     /// @brief Total number of processes in MPI_COMM_WORLD.
@@ -425,24 +414,24 @@ private:
     #endif
 };
 
-inline constexpr bool ParallelHeatSolver::isTopRow()
+inline constexpr bool ParallelHeatSolver::isNotTopRow()
 {
-    return _worldRank < _decomposition.nx;
+    return _neighbors[NORTH] != MPI_PROC_NULL;
 }
 
-inline constexpr bool ParallelHeatSolver::isBottomRow()
+inline constexpr bool ParallelHeatSolver::isNotBottomRow()
 {
-    return _worldRank >= _worldSize - _decomposition.nx;
+    return _neighbors[SOUTH] != MPI_PROC_NULL;
 }
 
-inline constexpr bool ParallelHeatSolver::isLeftColumn()
+inline constexpr bool ParallelHeatSolver::isNotLeftColumn()
 {
-    return _rowRank == 0;
+    return _neighbors[WEST] != MPI_PROC_NULL;
 }
 
-inline constexpr bool ParallelHeatSolver::isRightColumn()
+inline constexpr bool ParallelHeatSolver::isNotRightColumn()
 {
-    return _rowRank == _decomposition.nx - 1;
+    return _neighbors[EAST] != MPI_PROC_NULL;
 }
 
 inline constexpr float ParallelHeatSolver::computePoint(
