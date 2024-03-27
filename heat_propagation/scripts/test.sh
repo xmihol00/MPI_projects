@@ -38,3 +38,6 @@ for tile_size in "${tile_sizes[@]}"; do
         fi
     done
 done
+
+rm temp_par.h5
+rm temp_seq.h5

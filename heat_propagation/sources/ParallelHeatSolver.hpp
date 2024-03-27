@@ -23,9 +23,8 @@
 #include "AlignedAllocator.hpp"
 #include "Hdf5Handle.hpp"
 #include "HeatSolverBase.hpp"
-#include <iomanip>
 
-#define DATA_TYPE_EXCHANGE (0)
+#define DATA_TYPE_EXCHANGE (1)  // 0 - use MPI datatypes for halo exchange (UNSAFE), 1 - use raw data for halo exchange
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 /**
@@ -245,8 +244,6 @@ private:
 
     MPI_Comm _topologyComm;
     MPI_Comm _midColComm;
-    MPI_Comm _scatterGatherColComm;
-    MPI_Comm _scatterGatherRowComm;
 
     MPI_Request _haloExchangeRequest;
 
@@ -284,21 +281,13 @@ private:
         size_t westEastHalo;
     } _sizes;
     
-
-    struct Offsets
-    {
-        size_t northSouthHalo;
-        size_t westEastHalo;
-        size_t localWidthWithHalos;
-        size_t localHeightWithHalos;
-    } _offsets;
-
     struct SimulationHyperParams
     {
         const float airFlowRate;
         const float coolerTemp;
     } _simulationHyperParams;
 
+    // memory buffers for local tiles
     std::vector<float, AlignedAllocator<float>> _tempTiles[2];
     std::vector<float, AlignedAllocator<float>> _domainParamsTile;
     std::vector<int, AlignedAllocator<int>> _domainMapTile;
@@ -307,111 +296,15 @@ private:
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZoneTmp;
     std::vector<float, AlignedAllocator<float>> _domainParamsHaloZone;
 
-    std::vector<float, AlignedAllocator<float>> _scatterGatherTempRow;
-    std::vector<float, AlignedAllocator<float>> _initialScatterDomainParams;
-    std::vector<int, AlignedAllocator<int>> _initialScatterDomainMap;
-
-    std::vector<float, AlignedAllocator<float>> _tempTilesWithHaloZones[2];
-    std::vector<float, AlignedAllocator<float>> _domainParamsTileWithHaloZones;
-    std::vector<int, AlignedAllocator<int>> _domainMapTileWithHaloZones;
-
-    // parameters for all to all gather
-    int _transferCounts[4] = {0, };
-    int _displacements[4] = {0, };
-    int _inverseDisplacements[4] = {0, };
+    // parameters for scatter and gather
+    int _transferCounts_Raw[4] = {0, };
+    int _displacements_Raw[4] = {0, };
+    int _inverseDisplacements_Raw[4] = {0, };
     int _neighbors[4] = {0, };
-    int _transferCountsDataType[4] = {1, 1, 1, 1};
-    MPI_Aint _displacementsDataType[4] = {0, 0, 0, 0};
+    int _transferCounts_DataType[4] = {1, 1, 1, 1};
+    MPI_Aint _displacements_DataType[4] = {0, 0, 0, 0};
     std::vector<int> _scatterGatherCounts;
     std::vector<int> _scatterGatherDisplacements;
-
-    #define PRINT_DEBUG 1
-    #define MANIPULATE_TEMP 0
-
-    #if PRINT_DEBUG
-        void printTile(int rank, std::vector<float, AlignedAllocator<float>> &tile, int offset)
-        {
-            if (_worldRank == rank)
-            {
-                std::cerr << "Rank " << _worldRank << " tile:" << std::endl;
-                std::cerr << "Tile size: " << tile.size() << std::endl;
-                //std::cerr << "Neighbours: " << _neighbors[0] << " " << _neighbors[1] << " " << _neighbors[2] << " " << _neighbors[3] << std::endl;
-                std::cerr << std::setprecision(7) << std::fixed;
-                for (int i = 0; i < _sizes.localHeight + offset; i++)
-                {
-                    for (int j = 0; j < _sizes.localWidth + offset; j++)
-                    {
-                        std::cerr << std::setw(9) << tile[i * (_sizes.localWidth + offset) + j] << " ";
-                    }
-                    std::cerr << std::endl;
-                }
-                std::cerr << std::endl;
-                std::cerr << std::flush;
-            }
-
-            std::cerr << std::flush;
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
-
-        void printDomainMap(int rank)
-        {
-            if (_worldRank == rank)
-            {
-                std::cerr << std::setprecision(7) << std::fixed;
-                std::cerr << "Rank " << _worldRank << " domain map:" << std::endl;
-                for (int i = 0; i < _sizes.localHeight; i++)
-                {
-                    for (int j = 0; j < _sizes.localWidth; j++)
-                    {
-                        std::cerr << _domainMapTile[i * _sizes.localWidth + j] << " ";
-                    }
-                    std::cerr << std::endl;
-                }
-                std::cerr << std::endl;
-                std::cerr << std::flush;
-            }
-
-            std::cerr << std::flush;
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
-
-        void printHalo(int rank, int zone)
-        {
-            if (_worldRank == rank)
-            {
-                std::cerr << std::setprecision(7) << std::fixed;
-                std::cerr << "Rank " << _worldRank << " halo:" << std::endl;
-                for (int i = 0; i < 2; i++)
-                {
-                    for (int j = 0; j < _sizes.localWidth; j++)
-                    {
-                        std::cerr << _tempHaloZones[zone][i * _sizes.localWidth + j] << " ";
-                    }
-                    std::cerr << std::endl;
-                }
-                for (int i = 0; i < 2 * _sizes.localHeight; i += 2)
-                {
-                    std::cerr << _tempHaloZones[zone][4 * _sizes.localWidth + i] << " " <<  _tempHaloZones[zone][4 * _sizes.localWidth + i + 1] << "    " <<
-                        _tempHaloZones[zone][4 * _sizes.localWidth + 2 * _sizes.localHeight + i] << " " << _tempHaloZones[zone][4 * _sizes.localWidth + 2 * _sizes.localHeight + i + 1] << std::endl; 
-                }
-                for (int i = 2; i < 4; i++)
-                {
-                    for (int j = 0; j < _sizes.localWidth; j++)
-                    {
-                        std::cerr << _tempHaloZones[zone][i * _sizes.localWidth + j] << " ";
-                    }
-                    std::cerr << std::endl;
-                }
-                std::cerr << std::endl;
-                std::cerr << std::flush;
-            }
-
-            std::cerr << std::flush;
-            MPI_Barrier(MPI_COMM_WORLD);
-        }
-
-        bool _print = false;
-    #endif
 };
 
 inline constexpr bool ParallelHeatSolver::isNotTopRow()

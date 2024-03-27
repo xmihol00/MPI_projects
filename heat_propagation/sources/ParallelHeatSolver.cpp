@@ -125,18 +125,18 @@ void ParallelHeatSolver::initGridTopology()
     MPI_Cart_shift(_topologyComm, 1, 1, _neighbors + 2, _neighbors + 3);
 
     // counts and displacements for all to all communication with different data sizes
-    _transferCounts[0] = _transferCounts[1] = _sizes.northSouthHalo;
-    _transferCounts[2] = _transferCounts[3] = _sizes.westEastHalo;
-    _displacements[0] = 0;
-    _displacements[1] = _sizes.northSouthHalo;
-    _displacements[2] = 2 * _sizes.northSouthHalo;
-    _displacements[3] = 2 * _sizes.northSouthHalo + _sizes.westEastHalo;
+    _transferCounts_Raw[0] = _transferCounts_Raw[1] = _sizes.northSouthHalo;
+    _transferCounts_Raw[2] = _transferCounts_Raw[3] = _sizes.westEastHalo;
+    _displacements_Raw[0] = 0;
+    _displacements_Raw[1] = _sizes.northSouthHalo;
+    _displacements_Raw[2] = 2 * _sizes.northSouthHalo;
+    _displacements_Raw[3] = 2 * _sizes.northSouthHalo + _sizes.westEastHalo;
 
     // necessary for RMA communication, where when putting data e.g. to the north neighbor, the data must be put to its south halo zone
-    _inverseDisplacements[0] = _sizes.northSouthHalo;
-    _inverseDisplacements[1] = 0;
-    _inverseDisplacements[2] = 2 * _sizes.northSouthHalo + _sizes.westEastHalo;
-    _inverseDisplacements[3] = 2 * _sizes.northSouthHalo;
+    _inverseDisplacements_Raw[0] = _sizes.northSouthHalo;
+    _inverseDisplacements_Raw[1] = 0;
+    _inverseDisplacements_Raw[2] = 2 * _sizes.northSouthHalo + _sizes.westEastHalo;
+    _inverseDisplacements_Raw[3] = 2 * _sizes.northSouthHalo;
 }
 
 void ParallelHeatSolver::deinitGridTopology()
@@ -1111,15 +1111,16 @@ void ParallelHeatSolver::computeAndPrintMidColAverageSequential(float timeElapse
 void ParallelHeatSolver::startHaloExchangeP2P_Raw()
 {
     // leverage the created 2D topology to exchange the halo zones
-    MPI_Ineighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts, _displacements, MPI_FLOAT,
-                            _tempHaloZones[0].data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm, 
+    MPI_Ineighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT,
+                            _tempHaloZones[0].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT, _topologyComm, 
                             &_haloExchangeRequest);
 }
 
 void ParallelHeatSolver::startHaloExchangeP2P_DataType(bool next)
 {
-    MPI_Ineighbor_alltoallw(_tempTiles[next].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZoneTypes,
-                            _tempTiles[next].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZoneTypes, _topologyComm, 
+    // leverage the created 2D topology to exchange the halo zones
+    MPI_Ineighbor_alltoallw(_tempTiles[next].data(), _transferCounts_DataType, _displacements_DataType, _floatSendHaloZoneTypes,
+                            _tempTiles[next].data(), _transferCounts_DataType, _displacements_DataType, _floatRecvHaloZoneTypes, _topologyComm, 
                             &_haloExchangeRequest);
 }
 
@@ -1131,8 +1132,8 @@ void ParallelHeatSolver::startHaloExchangeRMA_Raw()
     {
         if (_neighbors[i] != MPI_PROC_NULL) // if the neighbor exists (not a boundary node)
         {
-            MPI_Put(_tempHaloZones[1].data() + _displacements[i], _transferCounts[i], MPI_FLOAT,
-                    _neighbors[i], _inverseDisplacements[i], _transferCounts[i], MPI_FLOAT, _haloExchangeWindows[0]);
+            MPI_Put(_tempHaloZones[1].data() + _displacements_Raw[i], _transferCounts_Raw[i], MPI_FLOAT,
+                    _neighbors[i], _inverseDisplacements_Raw[i], _transferCounts_Raw[i], MPI_FLOAT, _haloExchangeWindows[0]);
         }
     }
 }
@@ -1153,24 +1154,13 @@ void ParallelHeatSolver::startHaloExchangeRMA_DataType(bool next)
 
 void ParallelHeatSolver::awaitHaloExchangeP2P_Raw()
 {
-    /**********************************************************************************************************************/
-    /*                       Wait for all halo zone exchanges to finalize using P2P communication.                        */
-    /**********************************************************************************************************************/
     MPI_Status status = {0, 0, 0, 0, 0};
     MPI_Wait(&_haloExchangeRequest, &status);
-    if (status.MPI_ERROR != MPI_SUCCESS)
+    if (status.MPI_ERROR != MPI_SUCCESS) // this should not fail
     {
         cerr << "Rank: " << _worldRank << " - Error in halo exchange: " << status.MPI_ERROR << endl;
         MPI_Abort(MPI_COMM_WORLD, status.MPI_ERROR);
     }
-
-    // int actualRecvCount;
-    // MPI_Get_count(&status, MPI_FLOAT, &actualRecvCount);
-    // if (actualRecvCount != _sizes.northSouthHalo * 2 + _sizes.westEastHalo * 2)
-    //{
-    //     cerr << "Rank: " << _worldRank << " - Error in halo exchange: received unexpected number of values. Expected: " <<  _sizes.northSouthHalo * 2 + _sizes.westEastHalo * 2  << " Received: " << actualRecvCount << endl;
-    //     MPI_Abort(MPI_COMM_WORLD, MPI_ERR_COUNT);
-    // }
 }
 
 void ParallelHeatSolver::awaitHaloExchangeP2P_DataType(bool next)
@@ -1222,10 +1212,10 @@ void ParallelHeatSolver::scatterInitialData_Raw()
     }
 
     // exchange the halo zones
-    MPI_Neighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts, _displacements, MPI_FLOAT,
-                           _tempHaloZones[0].data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm);
-    MPI_Neighbor_alltoallv(_domainParamsHaloZoneTmp.data(), _transferCounts, _displacements, MPI_FLOAT,
-                           _domainParamsHaloZone.data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm);
+    MPI_Neighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT,
+                           _tempHaloZones[0].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT, _topologyComm);
+    MPI_Neighbor_alltoallv(_domainParamsHaloZoneTmp.data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT,
+                           _domainParamsHaloZone.data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT, _topologyComm);
 
     // copy initial temperature to the second buffer
     copy(_tempTiles[0].begin(), _tempTiles[0].end(), _tempTiles[1].begin());
@@ -1235,14 +1225,14 @@ void ParallelHeatSolver::scatterInitialData_DataType()
 {
     MPI_Scatterv(mMaterialProps.getInitialTemperature().data(), _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _tempTiles[0].data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
-    MPI_Neighbor_alltoallw(_tempTiles[0].data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZoneTypes,
-                           _tempTiles[0].data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZoneTypes, _topologyComm);
+    MPI_Neighbor_alltoallw(_tempTiles[0].data(), _transferCounts_DataType, _displacements_DataType, _floatSendHaloZoneTypes,
+                           _tempTiles[0].data(), _transferCounts_DataType, _displacements_DataType, _floatRecvHaloZoneTypes, _topologyComm);
     copy(_tempTiles[0].begin(), _tempTiles[0].end(), _tempTiles[1].begin());
     
     MPI_Scatterv(mMaterialProps.getDomainParameters().data(), _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _floatTileWithoutHaloZonesResized,
                  _domainParamsTile.data(), 1, _floatTileWithHaloZones, 0, MPI_COMM_WORLD);
-    MPI_Neighbor_alltoallw(_domainParamsTile.data(), _transferCountsDataType, _displacementsDataType, _floatSendHaloZoneTypes,
-                           _domainParamsTile.data(), _transferCountsDataType, _displacementsDataType, _floatRecvHaloZoneTypes, _topologyComm);
+    MPI_Neighbor_alltoallw(_domainParamsTile.data(), _transferCounts_DataType, _displacements_DataType, _floatSendHaloZoneTypes,
+                           _domainParamsTile.data(), _transferCounts_DataType, _displacements_DataType, _floatRecvHaloZoneTypes, _topologyComm);
     
     MPI_Scatterv(mMaterialProps.getDomainMap().data(), _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _intTileWithoutHaloZonesResized,
                  _domainMapTile.data(), 1, _intTileWithHaloZones, 0, MPI_COMM_WORLD);
@@ -1264,23 +1254,23 @@ void ParallelHeatSolver::prepareInitialHaloZones()
 {
     // copy to halo zones North and South
     // use the odd halo zone, so that after the initial exchange, the even halo zone can be used for the first iteration
-    copy(_tempTiles[0].begin(), _tempTiles[0].begin() + _sizes.northSouthHalo, _tempHaloZones[1].begin());                       // North
+    copy(_tempTiles[0].begin(), _tempTiles[0].begin() + _sizes.northSouthHalo, _tempHaloZones[1].begin());                     // North
     copy(_tempTiles[0].end() - _sizes.northSouthHalo, _tempTiles[0].end(), _tempHaloZones[1].begin() + _sizes.northSouthHalo); // South
 
-    copy(_domainParamsTile.begin(), _domainParamsTile.begin() + _sizes.northSouthHalo, _domainParamsHaloZoneTmp.begin());                       // North
+    copy(_domainParamsTile.begin(), _domainParamsTile.begin() + _sizes.northSouthHalo, _domainParamsHaloZoneTmp.begin());                     // North
     copy(_domainParamsTile.end() - _sizes.northSouthHalo, _domainParamsTile.end(), _domainParamsHaloZoneTmp.begin() + _sizes.northSouthHalo); // South
 
     // copy to halo zones West and East
     for (size_t i = 0; i < _sizes.localHeight; i++)
     {
         // use the odd halo zone, so that after the initial exchange, the even halo zone can be used for the first iteration
-        _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i] = _tempTiles[0][i * _sizes.localWidth];                                                         // West
-        _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i + 1] = _tempTiles[0][i * _sizes.localWidth + 1];                                                 // West
+        _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i] = _tempTiles[0][i * _sizes.localWidth];                                                   // West
+        _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i + 1] = _tempTiles[0][i * _sizes.localWidth + 1];                                           // West
         _tempHaloZones[1][2 * _sizes.northSouthHalo + _sizes.westEastHalo + 2 * i] = _tempTiles[0][i * _sizes.localWidth + _sizes.localWidth - 2];     // East
         _tempHaloZones[1][2 * _sizes.northSouthHalo + _sizes.westEastHalo + 2 * i + 1] = _tempTiles[0][i * _sizes.localWidth + _sizes.localWidth - 1]; // East
 
-        _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + 2 * i] = _domainParamsTile[i * _sizes.localWidth];                                                         // West
-        _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + 2 * i + 1] = _domainParamsTile[i * _sizes.localWidth + 1];                                                 // West
+        _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + 2 * i] = _domainParamsTile[i * _sizes.localWidth];                                                   // West
+        _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + 2 * i + 1] = _domainParamsTile[i * _sizes.localWidth + 1];                                           // West
         _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + _sizes.westEastHalo + 2 * i] = _domainParamsTile[i * _sizes.localWidth + _sizes.localWidth - 2];     // East
         _domainParamsHaloZoneTmp[2 * _sizes.northSouthHalo + _sizes.westEastHalo + 2 * i + 1] = _domainParamsTile[i * _sizes.localWidth + _sizes.localWidth - 1]; // East
     }
@@ -1289,10 +1279,10 @@ void ParallelHeatSolver::prepareInitialHaloZones()
 void ParallelHeatSolver::exchangeInitialHaloZones()
 {
     // scatter/gather the halo zones across neighbors
-    MPI_Neighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts, _displacements, MPI_FLOAT,
-                           _tempHaloZones[0].data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm);
-    MPI_Neighbor_alltoallv(_domainParamsHaloZoneTmp.data(), _transferCounts, _displacements, MPI_FLOAT,
-                           _domainParamsHaloZone.data(), _transferCounts, _displacements, MPI_FLOAT, _topologyComm);
+    MPI_Neighbor_alltoallv(_tempHaloZones[1].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT,
+                           _tempHaloZones[0].data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT, _topologyComm);
+    MPI_Neighbor_alltoallv(_domainParamsHaloZoneTmp.data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT,
+                           _domainParamsHaloZone.data(), _transferCounts_Raw, _displacements_Raw, MPI_FLOAT, _topologyComm);
 }
 
 void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
@@ -1304,21 +1294,7 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
 #if DATA_TYPE_EXCHANGE
     scatterInitialData_DataType();
-    /*for (int i = 0; i < _worldSize; i++)
-    {
-        printTile(i, _tempTiles[0], 4);
-        printTile(i, _tempTiles[1], 4);
-    }*/
-    /*for (int i = 0; i < _worldSize; i++)
-    {
-        printTile(i, _tempTiles[1], 4);
-    }*/
-    /*for (int i = 0; i < _worldSize; i++)
-    {
-        printTile(i, _domainParamsTile, 4);
-    }*/
-    //return;
-
+    
     const auto startHaloExchangeFunction = mSimulationProps.isRunParallelRMA() ? &ParallelHeatSolver::startHaloExchangeRMA_DataType : &ParallelHeatSolver::startHaloExchangeP2P_DataType;
     const auto awaitHaloExchangeFunction = mSimulationProps.isRunParallelRMA() ? &ParallelHeatSolver::awaitHaloExchangeRMA_DataType : &ParallelHeatSolver::awaitHaloExchangeP2P_DataType;
 
@@ -1340,15 +1316,6 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
         // wait for all halo zone exchanges to finalize
         (this->*awaitHaloExchangeFunction)(next);
-
-        /*if (iter == 3)
-        {
-            for (int i = 0; i < _worldSize; i++)
-            {
-                printTile(i, _tempTiles[next], 4);
-            }
-            return;
-        }*/
 
         if (shouldStoreData(iter))
         {
@@ -1386,8 +1353,6 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
     // deallocate no longer needed temporary buffers
     _domainParamsHaloZoneTmp.resize(0);
-    _initialScatterDomainParams.resize(0);
-    _initialScatterDomainMap.resize(0);
 
     const auto startHaloExchangeFunction = mSimulationProps.isRunParallelRMA() ? &ParallelHeatSolver::startHaloExchangeRMA_Raw : &ParallelHeatSolver::startHaloExchangeP2P_Raw;
     const auto awaitHaloExchangeFunction = mSimulationProps.isRunParallelRMA() ? &ParallelHeatSolver::awaitHaloExchangeRMA_Raw : &ParallelHeatSolver::awaitHaloExchangeP2P_Raw;
