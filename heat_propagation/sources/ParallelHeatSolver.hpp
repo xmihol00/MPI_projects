@@ -25,7 +25,7 @@
 #include "HeatSolverBase.hpp"
 #include <iomanip>
 
-#define DATA_TYPE_EXCHANGE (true)
+#define DATA_TYPE_EXCHANGE (1)
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 /**
@@ -283,17 +283,25 @@ private:
 
     struct Sizes
     {
-        size_t global;
+        size_t globalEdge;
         size_t localHeight;
+        size_t localHeightWithHalos;
         size_t localWidth;
-    } _edgeSizes;
+        size_t localWidthWithHalos;
+        size_t globalTile;
+        size_t localTile;
+        size_t localTileWithHalos;
+        size_t northSouthHalo;
+        size_t westEastHalo;
+    } _sizes;
+    
 
     struct Offsets
     {
         size_t northSouthHalo;
         size_t westEastHalo;
-        size_t tileWidthWithHalos;
-        size_t tileHeightWithHalos;
+        size_t localWidthWithHalos;
+        size_t localHeightWithHalos;
     } _offsets;
 
     struct SimulationHyperParams
@@ -325,8 +333,8 @@ private:
     int _neighbors[4] = {0, };
     int _transferCountsDataType[4] = {1, 1, 1, 1};
     MPI_Aint _displacementsDataType[4] = {0, 0, 0, 0};
-    std::vector<int> _scatterCounts;
-    std::vector<int> _scatterDisplacements;
+    std::vector<int> _scatterGatherCounts;
+    std::vector<int> _scatterGatherDisplacements;
 
     #define PRINT_DEBUG 1
     #define MANIPULATE_TEMP 0
@@ -340,11 +348,11 @@ private:
                 std::cerr << "Tile size: " << tile.size() << std::endl;
                 //std::cerr << "Neighbours: " << _neighbors[0] << " " << _neighbors[1] << " " << _neighbors[2] << " " << _neighbors[3] << std::endl;
                 std::cerr << std::setprecision(7) << std::fixed;
-                for (int i = 0; i < _edgeSizes.localHeight + offset; i++)
+                for (int i = 0; i < _sizes.localHeight + offset; i++)
                 {
-                    for (int j = 0; j < _edgeSizes.localWidth + offset; j++)
+                    for (int j = 0; j < _sizes.localWidth + offset; j++)
                     {
-                        std::cerr << std::setw(9) << tile[i * (_edgeSizes.localWidth + offset) + j] << " ";
+                        std::cerr << std::setw(9) << tile[i * (_sizes.localWidth + offset) + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -362,11 +370,11 @@ private:
             {
                 std::cerr << std::setprecision(7) << std::fixed;
                 std::cerr << "Rank " << _worldRank << " domain map:" << std::endl;
-                for (int i = 0; i < _edgeSizes.localHeight; i++)
+                for (int i = 0; i < _sizes.localHeight; i++)
                 {
-                    for (int j = 0; j < _edgeSizes.localWidth; j++)
+                    for (int j = 0; j < _sizes.localWidth; j++)
                     {
-                        std::cerr << _domainMapTile[i * _edgeSizes.localWidth + j] << " ";
+                        std::cerr << _domainMapTile[i * _sizes.localWidth + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -386,22 +394,22 @@ private:
                 std::cerr << "Rank " << _worldRank << " halo:" << std::endl;
                 for (int i = 0; i < 2; i++)
                 {
-                    for (int j = 0; j < _edgeSizes.localWidth; j++)
+                    for (int j = 0; j < _sizes.localWidth; j++)
                     {
-                        std::cerr << _tempHaloZones[zone][i * _edgeSizes.localWidth + j] << " ";
+                        std::cerr << _tempHaloZones[zone][i * _sizes.localWidth + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
-                for (int i = 0; i < 2 * _edgeSizes.localHeight; i += 2)
+                for (int i = 0; i < 2 * _sizes.localHeight; i += 2)
                 {
-                    std::cerr << _tempHaloZones[zone][4 * _edgeSizes.localWidth + i] << " " <<  _tempHaloZones[zone][4 * _edgeSizes.localWidth + i + 1] << "    " <<
-                        _tempHaloZones[zone][4 * _edgeSizes.localWidth + 2 * _edgeSizes.localHeight + i] << " " << _tempHaloZones[zone][4 * _edgeSizes.localWidth + 2 * _edgeSizes.localHeight + i + 1] << std::endl; 
+                    std::cerr << _tempHaloZones[zone][4 * _sizes.localWidth + i] << " " <<  _tempHaloZones[zone][4 * _sizes.localWidth + i + 1] << "    " <<
+                        _tempHaloZones[zone][4 * _sizes.localWidth + 2 * _sizes.localHeight + i] << " " << _tempHaloZones[zone][4 * _sizes.localWidth + 2 * _sizes.localHeight + i + 1] << std::endl; 
                 }
                 for (int i = 2; i < 4; i++)
                 {
-                    for (int j = 0; j < _edgeSizes.localWidth; j++)
+                    for (int j = 0; j < _sizes.localWidth; j++)
                     {
-                        std::cerr << _tempHaloZones[zone][i * _edgeSizes.localWidth + j] << " ";
+                        std::cerr << _tempHaloZones[zone][i * _sizes.localWidth + j] << " ";
                     }
                     std::cerr << std::endl;
                 }
@@ -451,14 +459,6 @@ inline constexpr float ParallelHeatSolver::computePoint(
         domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
         domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
     );
-
-    if ((
-        domainParamNorthUpper + domainParamNorthLower + domainParamSouthLower + domainParamSouthUpper + 
-        domainParamWestLeft + domainParamWestRight + domainParamEastRight + domainParamEastLeft + domainParamCenter
-    ) == 0)
-    {
-        std::cerr << "Rank " << _worldRank << " zero division " << frac << std::endl;
-    }
 
     float pointTemp = frac * (
         tempNorthUpper * domainParamNorthUpper + 

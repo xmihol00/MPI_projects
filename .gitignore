@@ -37,3 +37,4 @@ test_data
 nums.bin
 
 build/
+ParallelHeatSolver_old*
