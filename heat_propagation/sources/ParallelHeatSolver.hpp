@@ -24,7 +24,7 @@
 #include "Hdf5Handle.hpp"
 #include "HeatSolverBase.hpp"
 
-#define DATA_TYPE_EXCHANGE (1)  // 0 - use MPI datatypes for halo exchange (UNSAFE), 1 - use raw data for halo exchange
+#define DATA_TYPE_EXCHANGE (1)  // 1 - use MPI datatypes for halo exchange (UNSAFE), 0 - use raw data for halo exchange
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 /**
@@ -267,7 +267,7 @@ private:
         int ny;
     } _decomposition;
 
-    struct Sizes
+    struct Sizes // TODO change to int wherever possible
     {
         size_t globalEdge;
         size_t localHeight;
@@ -327,6 +327,7 @@ inline constexpr bool ParallelHeatSolver::isNotRightColumn()
     return _neighbors[EAST] != MPI_PROC_NULL;
 }
 
+#pragma omp declare simd notinbranch
 inline constexpr float ParallelHeatSolver::computePoint(
     float tempNorthUpper, float tempNorthLower, float tempSouthLower, float tempSouthUpper, 
     float tempWestLeft, float tempWestRight, float tempEastRight, float tempEastLeft, 

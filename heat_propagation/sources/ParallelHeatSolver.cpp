@@ -180,8 +180,8 @@ void ParallelHeatSolver::allocLocalTiles()
 
 void ParallelHeatSolver::initDataTypes()
 {
-    int tileSize[2] = {_sizes.globalEdge, _sizes.globalEdge};
-    int localTileSize[2] = {_sizes.localHeight, _sizes.localWidth};
+    int tileSize[2] = {static_cast<int>(_sizes.globalEdge), static_cast<int>(_sizes.globalEdge)};
+    int localTileSize[2] = {static_cast<int>(_sizes.localHeight), static_cast<int>(_sizes.localWidth)};
     int starts[2] = {0, 0};
     
     // temperature/domain parameters scatter and gather data type
@@ -969,6 +969,8 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
 {
     float *tempCurrentTile = _tempTiles[current].data();
     float *tempNextTile = _tempTiles[next].data();
+    float *domainParamsTile = _domainParamsTile.data();
+    int *domainMapTile = _domainMapTile.data();
 
     for (size_t i = 2; i < _sizes.localHeight - 2; i++)
     {
@@ -982,16 +984,17 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
         const int eastIdx = i * _sizes.localWidth + 1;
         const int eastRightIdx = i * _sizes.localWidth + 2;
 
+        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : 64) simdlen(16)
         for (size_t j = 2; j < _sizes.localWidth - 2; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
                 tempCurrentTile[westLeftIdx + j], tempCurrentTile[westIdx + j], tempCurrentTile[eastIdx + j], tempCurrentTile[eastRightIdx + j],
                 tempCurrentTile[centerIdx + j],
-                _domainParamsTile[northUpperIdx + j], _domainParamsTile[northIdx + j], _domainParamsTile[southIdx + j], _domainParamsTile[southLowerIdx + j],
-                _domainParamsTile[westLeftIdx + j], _domainParamsTile[westIdx + j], _domainParamsTile[eastIdx + j], _domainParamsTile[eastRightIdx + j],
-                _domainParamsTile[centerIdx + j],
-                _domainMapTile[centerIdx + j]);
+                domainParamsTile[northUpperIdx + j], domainParamsTile[northIdx + j], domainParamsTile[southIdx + j], domainParamsTile[southLowerIdx + j],
+                domainParamsTile[westLeftIdx + j], domainParamsTile[westIdx + j], domainParamsTile[eastIdx + j], domainParamsTile[eastRightIdx + j],
+                domainParamsTile[centerIdx + j],
+                domainMapTile[centerIdx + j]);
         }
     }
 }
@@ -1015,6 +1018,7 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
         const int eastIdx = centerIdx + 1;
         const int eastRightIdx = centerIdx + 2;
 
+        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : 64) simdlen(16)
         for (size_t j = 4; j < _sizes.localWidthWithHalos - 4; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
