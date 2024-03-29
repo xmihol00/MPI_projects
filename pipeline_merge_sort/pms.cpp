@@ -434,10 +434,6 @@ void PipelineMergeSort<communication_style>::input_process()
     }
 
     MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of input values to be sent to the last process
-    // synchronize with the last process to ensure the output is printed in the correct order
-    // first process will always send all the values before the last process receives the first value,
-    // but stdout is buffered and the output might be printed in a wrong order
-    MPI_Barrier(_firstLastComm);
 }
 
 template<CommunicationStyles communication_style> 
@@ -558,7 +554,6 @@ void PipelineMergeSort<communication_style>::output_process()
     // first process will always send all the values before the last process receives the first value,
     // but stdout is buffered and the output might be printed in a wrong order
     MPI_Recv(&outputs, 1, MPI_UINT64_T, 0, 0, _firstLastComm, MPI_STATUS_IGNORE);
-    MPI_Barrier(_firstLastComm); // synchronize with the first process to ensure the output is printed in the correct order
 
     setup_top_channel(); // wait for half of the values to be received
 
