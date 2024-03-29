@@ -25,13 +25,18 @@ for D in -a -d; do
             N=$(python3 -c "from math import ceil; print(ceil($Q), end='')")
             echo "N=$N, M=$M, D=$D, C=$C"
             python3 -c "import numpy as np; np.random.randint(0, 256, $M, dtype=np.uint8).tofile('nums.bin')"
-            mpiexec -np $N pms $D $C <nums.bin | python3 ../sorted.py $D $M >/dev/null
+            mpiexec -np $N pms $D $C <nums.bin | tee out.txt | tail -n +2 | python3 ../sorted.py $D $M >/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "\e[32mSORTED\e[0m"
             else
                 failed=$((failed+1))
                 echo "N=$N, M=$M, D=$D, C=$C" >> failed.log
                 echo -e "\e[31mNOT SORTED\e[0m" | tee -a failed.log
+            fi
+            head -n 1 out.txt > input.txt
+            python3 ../compare_inputs.py nums.bin input.txt | tee -a failed.log
+            if [ $? -ne 0 ]; then
+                failed=$((failed+1))
             fi
         done
     done
@@ -58,13 +63,18 @@ for D in -a -d; do
             M=$((2**($N-1)))
             echo "N=$N, M=$M, D=$D, C=$C"
             python3 -c "import numpy as np; np.random.randint(0, 256, $M, dtype=np.uint8).tofile('nums.bin')"
-            mpiexec -np $N pms $D $C <nums.bin | python3 ../sorted.py $D $M >/dev/null
+            mpiexec -np $N pms $D $C <nums.bin | tee out.txt | tail -n +2 | python3 ../sorted.py $D $M >/dev/null
             if [ $? -eq 0 ]; then
                 echo -e "\e[32mSORTED\e[0m"
             else
                 failed=$((failed+1))
                 echo "N=$N, M=$M, D=$D, C=$C" >> failed.log
                 echo -e "\e[31mNOT SORTED\e[0m" | tee -a failed.log
+            fi
+            head -n 1 out.txt > input.txt
+            python3 ../compare_inputs.py nums.bin input.txt | tee -a failed.log
+            if [ $? -ne 0 ]; then
+                failed=$((failed+1))
             fi
         done
     done
@@ -77,3 +87,5 @@ else
     echo -e "\e[31mSome tests failed\e[0m" | tee -a failed.log
     echo -e "\e[31m$failed tests failed\e[0m" | tee -a failed.log
 fi
+
+rm out.txt input.txt nums.bin

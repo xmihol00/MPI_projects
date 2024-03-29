@@ -16,7 +16,7 @@
 //               N=$(python3 -c "from math import ceil, log2; print(ceil(log2($M)+1), end='')")
 //               if [ "$D" = "" ]; then D="-a"; else D="-d"; fi
 //               if [ "$D" = "-d" ]; then R="-r"; else R=""; fi
-//               dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N ./pms $D | sort -nc $R && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m"
+//               dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N ./pms $D | tail -n +2 | sort -nc $R && echo -e "\e[32mSORTED\e[0m" || echo -e "\e[31mNOT SORTED\e[0m"
 // =======================================================================================================================================================
 
 // =======================================================================================================================================================
@@ -33,7 +33,6 @@
 // going to be increased with less processes.
 // =======================================================================================================================================================
 
-#include <stdio.h>
 #include <mpi.h>
 #include <iostream>
 #include <string>
@@ -109,6 +108,8 @@ class PipelineMergeSort
         const uint64_t OUTPUT_SIZE;     // size of the output buffer and the output which, will be send as a batch every second iteration
         const uint64_t ITERATIONS;      // number of iterations to perform the sorting, decreases by half with increasing rank
 
+        MPI_Comm _firstLastComm;        // communicator for the first and last process, to ensure print to STDOUT is synchronized
+
         // use simple arrays for the input and output buffers for the top channel, as it is necessary to send a whole batch before the next process can start
         uint8_t *_input_buffer;         // input buffer to receive values from the previous process
         uint8_t *_output_buffer;        // output buffer to send values to the next process
@@ -180,6 +181,16 @@ PipelineMergeSort<communication_style>::PipelineMergeSort(int rank, int size, MP
     {
         _output_buffer = nullptr;
     }
+
+    if (RANK == 0 || RANK == SIZE - 1) // first and last process
+    {
+        MPI_Comm_split(MPI_COMM_WORLD, 0, RANK == 0 ? 0 : 1, &_firstLastComm); // split the communicator into two groups, one for the first and one for the last process
+    }
+    else // all other processes
+    {
+        MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_firstLastComm); // split the communicator into two groups, one for the first and one for the last process
+        _firstLastComm = MPI_COMM_NULL; // set the communicator to NULL, as it is not needed
+    }
 }
 
 template<CommunicationStyles communication_style>
@@ -195,6 +206,11 @@ PipelineMergeSort<communication_style>::~PipelineMergeSort()
     if (_output_buffer != nullptr) // all processes except the last process
     {
         delete[] _output_buffer;
+    }
+
+    if (_firstLastComm != MPI_COMM_NULL) // first and last process
+    {
+        MPI_Comm_free(&_firstLastComm);
     }
 }
 
@@ -357,7 +373,7 @@ void PipelineMergeSort<communication_style>::input_process()
     {
         uint8_t value;
         char character;
-    } character_value; // dirty trick to cast values between char and uint8_t
+    } character_value; // trick to cast values between char and uint8_t
 
     uint64_t i = 0;
     for (; i < ITERATIONS; i++)
@@ -368,6 +384,8 @@ void PipelineMergeSort<communication_style>::input_process()
             break; // no more input values, padding will be used to fill the rest of the input values
         }
         
+        cout << (unsigned)character_value.value << " "; // print the input value
+
         if (_ping_pong) // write to top channel
         {
             MPI_Send(&character_value.value, 1, MPI_BYTE, 1, 0, TOP_COMM);
@@ -379,6 +397,8 @@ void PipelineMergeSort<communication_style>::input_process()
 
         _ping_pong = !_ping_pong; // switch the channel/stream
     }
+    cout << endl;
+    cout << flush;  // ensure input process is done with writing to STDOUT
 
     if (i < ITERATIONS >> 1) // there must be at least 2^(size-2) input values, otherwise the number of processes is too high
     {
@@ -386,10 +406,11 @@ void PipelineMergeSort<communication_style>::input_process()
         MPI_Abort(MPI_COMM_WORLD, 1); // not enough input values
     }
 
+    // send the actual number of input values to the last process and allow it to start printing on STDOUT
     MPI_Request size_request;
-    MPI_Isend(&i, 1, MPI_UINT64_T, SIZE-1, 0, MPI_COMM_WORLD, &size_request); // send the actual number of input values to the last process
+    MPI_Isend(&i, 1, MPI_UINT64_T, 1, 0, _firstLastComm, &size_request);
 
-    uint8_t padding = direction == ASCENDING ? 0xFF : 0x00; // padd the input values with the maximum (ASCENDING sort) or minimum (DESCENDING sort) value
+    uint8_t padding = direction == ASCENDING ? 0xFF : 0x00; // pad the input values with the maximum (ASCENDING sort) or minimum (DESCENDING sort) value
     
     // make sure we copy 'i' into 'j', since the value of is being send to the last process, thus cannot be modified
     for (uint64_t j = i; j < ITERATIONS; j++)
@@ -413,6 +434,10 @@ void PipelineMergeSort<communication_style>::input_process()
     }
 
     MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of input values to be sent to the last process
+    // synchronize with the last process to ensure the output is printed in the correct order
+    // first process will always send all the values before the last process receives the first value,
+    // but stdout is buffered and the output might be printed in a wrong order
+    MPI_Barrier(_firstLastComm);
 }
 
 template<CommunicationStyles communication_style> 
@@ -529,8 +554,11 @@ template<SortDirection direction>
 void PipelineMergeSort<communication_style>::output_process()
 {
     uint64_t outputs = 0;
-    MPI_Request size_request;
-    MPI_Irecv(&outputs, 1, MPI_UINT64_T, 0, 0, MPI_COMM_WORLD, &size_request); // receive the number of input values from the first process
+    // receive the number of input values from the first process and synchronize printing to STDOUT
+    // first process will always send all the values before the last process receives the first value,
+    // but stdout is buffered and the output might be printed in a wrong order
+    MPI_Recv(&outputs, 1, MPI_UINT64_T, 0, 0, _firstLastComm, MPI_STATUS_IGNORE);
+    MPI_Barrier(_firstLastComm); // synchronize with the first process to ensure the output is printed in the correct order
 
     setup_top_channel(); // wait for half of the values to be received
 
@@ -551,8 +579,6 @@ void PipelineMergeSort<communication_style>::output_process()
     }
 
     uint64_t k = INPUT_SIZE;
-    MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of actual input values to be received from the first process
-
     while (!_input_queue.empty() && i < INPUT_SIZE && k++ < outputs) // empty one of the input data structures or stop if there are no more values to be printed
     {
         if ((direction == ASCENDING && _input_buffer[i] < _input_queue.front()) || (direction == DESCENDING && _input_buffer[i] > _input_queue.front()))

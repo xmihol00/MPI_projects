@@ -23,7 +23,10 @@ all: $(PROJECT_DIR)/pms.cpp
 	$(CC) $(CFLAGS) $(CPP_SRC) -o $(PROJECT_DIR)/pms
 
 run: all
-	dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C | python3 $(PROJECT_DIR)/sorted.py $D $M
+	dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C | tail -n +2 | python3 $(PROJECT_DIR)/sorted.py $D $M
+
+check: all
+	dd if=/dev/random bs=1 count=$M 2>/dev/null | mpirun --oversubscribe -np $N $(PROJECT_DIR)/pms $D $C
 
 # usage: 'M' stands for number of values to be sorted and 'D' stands for direction ('-a' for ascending, '-d' for descending) 
 #        make

@@ -38,3 +38,9 @@ nums.bin
 
 build/
 ParallelHeatSolver_old*
+test.bin
+input.bin
+output.bin
+out.txt
+failed.log
+input.txt
