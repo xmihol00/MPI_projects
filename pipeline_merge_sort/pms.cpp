@@ -8,7 +8,7 @@
 
 // =======================================================================================================================================================
 // compile with: mpic++ -std=c++17 pms.cpp -o pms
-// run with:     mpirun -np <number of processes> ./pms [-a|-d]
+// run with:     mpirun -np <number of processes> ./pms [-a|-d] [-s|-b]
 // test with:    https://github.com/xmihol00/MPI_projects/blob/main/pipeline_merge_sort/test.sh or manually with the following commands:
 //               M=123456  # choose a number of input values
 //               D=""      # choose a sort direction, ASCENDING is by default
@@ -69,9 +69,10 @@ enum CommunicationStyles
 
 /**
  * @brief Sorts a sequence of [(2^(N-2)+1), ..., (2^(N-1))] values using the pipeline merge sort algorithm with N processes.
- *        The input values are read from STDIN and the sorted sequence is written to STDOUT.
+ *        The input values are read from STDIN and the sorted sequence is written to STDOUT. The default transfer of values 
+ *        between processes is set SINGLE, i.e. values are sent one by one across both channels. 
  */
-template <CommunicationStyles communication_style = CommunicationStyles::BATCH>
+template <CommunicationStyles communication_style = CommunicationStyles::SINGLE>
 class PipelineMergeSort
 {
     public:
@@ -107,8 +108,6 @@ class PipelineMergeSort
         const uint64_t INPUT_SIZE;      // size of the input buffer and the input which must be received from the previous process before sorting can start
         const uint64_t OUTPUT_SIZE;     // size of the output buffer and the output which, will be send as a batch every second iteration
         const uint64_t ITERATIONS;      // number of iterations to perform the sorting, decreases by half with increasing rank
-
-        MPI_Comm _firstLastComm;        // communicator for the first and last process, to ensure print to STDOUT is synchronized
 
         // use simple arrays for the input and output buffers for the top channel, as it is necessary to send a whole batch before the next process can start
         uint8_t *_input_buffer;         // input buffer to receive values from the previous process
@@ -181,16 +180,6 @@ PipelineMergeSort<communication_style>::PipelineMergeSort(int rank, int size, MP
     {
         _output_buffer = nullptr;
     }
-
-    if (RANK == 0 || RANK == SIZE - 1) // first and last process
-    {
-        MPI_Comm_split(MPI_COMM_WORLD, 0, RANK == 0 ? 0 : 1, &_firstLastComm); // split the communicator into two groups, one for the first and one for the last process
-    }
-    else // all other processes
-    {
-        MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_firstLastComm); // split the communicator into two groups, one for the first and one for the last process
-        _firstLastComm = MPI_COMM_NULL; // set the communicator to NULL, as it is not needed
-    }
 }
 
 template<CommunicationStyles communication_style>
@@ -206,11 +195,6 @@ PipelineMergeSort<communication_style>::~PipelineMergeSort()
     if (_output_buffer != nullptr) // all processes except the last process
     {
         delete[] _output_buffer;
-    }
-
-    if (_firstLastComm != MPI_COMM_NULL) // first and last process
-    {
-        MPI_Comm_free(&_firstLastComm);
     }
 }
 
@@ -406,13 +390,9 @@ void PipelineMergeSort<communication_style>::input_process()
         MPI_Abort(MPI_COMM_WORLD, 1); // not enough input values
     }
 
-    // send the actual number of input values to the last process and allow it to start printing on STDOUT
-    MPI_Request size_request;
-    MPI_Isend(&i, 1, MPI_UINT64_T, 1, 0, _firstLastComm, &size_request);
-
     uint8_t padding = direction == ASCENDING ? 0xFF : 0x00; // pad the input values with the maximum (ASCENDING sort) or minimum (DESCENDING sort) value
     
-    // make sure we copy 'i' into 'j', since the value of is being send to the last process, thus cannot be modified
+    // make sure we copy 'i' into 'j', in order to remember the number of input values
     for (uint64_t j = i; j < ITERATIONS; j++)
     {
         if (_ping_pong) // write to top channel
@@ -433,7 +413,33 @@ void PipelineMergeSort<communication_style>::input_process()
         cerr << "Warning: There are still input values present, which will not be sorted." << endl;
     }
 
-    MPI_Wait(&size_request, MPI_STATUS_IGNORE); // wait for the number of input values to be sent to the last process
+    uint8_t output;
+    MPI_Status status = {0, 0, 0, 0, 0};
+    int recv_count = 0;
+    for (uint64_t j = 0; j < i; j++) // print the correct number of sorted values
+    {
+        MPI_Recv(&output, 1, MPI_BYTE, SIZE - 1, 0, MPI_COMM_WORLD, &status); // wait for the values to be sorted
+        if (status.MPI_ERROR != MPI_SUCCESS)
+        {
+            cerr << "Error: First process failed to receive sorted value." << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1); // error occurred during the data transfer
+        }
+
+        MPI_Get_count(&status, MPI_BYTE, &recv_count);
+        if (recv_count != 1)
+        {
+            cerr << "Error: First process received message of unexpected size (" << recv_count << ") from last process." << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1); // not enough values received
+        }
+
+        cout << (unsigned)output << "\n"; // print each sorted value on a new line
+    }
+    cout << flush; // ensure the output process is done with writing to STDOUT
+
+    for (uint64_t j = i; j < ITERATIONS; j++) // receive the padding values, but do not print them
+    {
+        MPI_Recv(&output, 1, MPI_BYTE, SIZE - 1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE); // wait for the padding values to be sorted
+    }
 }
 
 template<CommunicationStyles communication_style> 
@@ -549,12 +555,6 @@ template<CommunicationStyles communication_style>
 template<SortDirection direction>
 void PipelineMergeSort<communication_style>::output_process()
 {
-    uint64_t outputs = 0;
-    // receive the number of input values from the first process and synchronize printing to STDOUT
-    // first process will always send all the values before the last process receives the first value,
-    // but stdout is buffered and the output might be printed in a wrong order
-    MPI_Recv(&outputs, 1, MPI_UINT64_T, 0, 0, _firstLastComm, MPI_STATUS_IGNORE);
-
     setup_top_channel(); // wait for half of the values to be received
 
     uint64_t i = 0, j = 0;
@@ -564,38 +564,39 @@ void PipelineMergeSort<communication_style>::output_process()
         bot_receive();
         if ((direction == ASCENDING && _input_buffer[i] < _input_queue.front()) || (direction == DESCENDING && _input_buffer[i] > _input_queue.front()))
         {
-            cout << (unsigned)_input_buffer[i++] << endl;
+            // send the sorted value to the first process, only one process should write to STDOUT, printing from multiple processes can cause the output 
+            // to be mixed up even if the processes are synchronized
+            MPI_Send(&_input_buffer[i++], 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
         }
         else
         {
-            cout << (unsigned)_input_queue.front() << endl;
+            MPI_Send(&_input_queue.front(), 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
             _input_queue.pop();
         }
     }
 
-    uint64_t k = INPUT_SIZE;
-    while (!_input_queue.empty() && i < INPUT_SIZE && k++ < outputs) // empty one of the input data structures or stop if there are no more values to be printed
+    while (!_input_queue.empty() && i < INPUT_SIZE) // empty one of the input data structures or stop if there are no more values to be printed
     {
         if ((direction == ASCENDING && _input_buffer[i] < _input_queue.front()) || (direction == DESCENDING && _input_buffer[i] > _input_queue.front()))
         {
-            cout << (unsigned)_input_buffer[i++] << endl;
-        }
+            MPI_Send(&_input_buffer[i++], 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
+        }        
         else
         {
-            cout << (unsigned)_input_queue.front() << endl;
+            MPI_Send(&_input_queue.front(), 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
             _input_queue.pop();
         }
     }
 
     // only one of the while loops will be executed, the other one will be skipped
-    while (i < INPUT_SIZE && k++ < outputs) // print the remaining values from the top channel, if there are any left to be printed
+    while (i < INPUT_SIZE) // print the remaining values from the top channel, if there are any left to be printed
     {
-        cout << (unsigned)_input_buffer[i++] << endl;
+        MPI_Send(&_input_buffer[i++], 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
     }
 
-    while (!_input_queue.empty() && k++ < outputs) // print the remaining values from the bottom stream, if there are any left to be printed
+    while (!_input_queue.empty()) // print the remaining values from the bottom stream, if there are any left to be printed
     {
-        cout << (unsigned)_input_queue.front() << endl;
+        MPI_Send(&_input_queue.front(), 1, MPI_BYTE, 0, 0, MPI_COMM_WORLD);
         _input_queue.pop();
     }
 }
@@ -616,7 +617,7 @@ int main(int argc, char *argv[])
 
     // default values for the sort direction and the communication style
     SortDirection direction = SortDirection::ASCENDING;
-    CommunicationStyles communication_style = CommunicationStyles::BATCH;
+    CommunicationStyles communication_style = CommunicationStyles::SINGLE;
 
     // parsing of arguments, very simple, second argument can be passed only if the first argument is passed
     if (argc > 1) // parse the first command line argument (optional)
@@ -642,14 +643,14 @@ int main(int argc, char *argv[])
     if (argc > 2) // parse the second command line argument (optional)
     {
         string arg = argv[2];
-        if (arg == "-s")
+        if (arg == "-b")
         {
-            communication_style = CommunicationStyles::SINGLE;
-            INFO_PRINT(rank, "SINGLE communication style will be used.");
+            communication_style = CommunicationStyles::BATCH;
+            INFO_PRINT(rank, "BATCH communication style will be used.");
         }
         else
         {
-            INFO_PRINT(rank, "BATCH communication style will be used.");
+            INFO_PRINT(rank, "SINGLE communication style will be used.");
         }
         
         if (rank == 0 && ((arg != "-s" && arg != "-b")))

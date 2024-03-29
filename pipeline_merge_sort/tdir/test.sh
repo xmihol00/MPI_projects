@@ -56,7 +56,7 @@ for D in -a -d; do
         if [ "$C" = "-b" ]; then
             title="$title Batch"
         else
-            title="$title Bingle"
+            title="$title Single"
         fi
         echo -e "testing: \e[34m$title\e[0m" | tee -a failed.log
         for N in {2..24}; do
