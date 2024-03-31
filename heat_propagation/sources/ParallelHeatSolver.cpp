@@ -284,166 +284,8 @@ void ParallelHeatSolver::deinitDataTypes()
 
 void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
 {
-    enum class Corners { LEFT_UPPER, RIGHT_UPPER, LEFT_LOWER, RIGHT_LOWER };
-    enum class CornerPoints { LEFT_UPPER, RIGHT_UPPER, LEFT_LOWER, RIGHT_LOWER };
-    auto computeCornerPoint = [&]<Corners corner, CornerPoints cornerPoint>() 
-    {   
-        pair<float, float> *tempWestHaloZone = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _sizes.northSouthHalo);
-        pair<float, float> *tempEastHaloZone = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _sizes.northSouthHalo + _sizes.westEastHalo);
-        
-        pair<float, float> *domainParamsWestHaloZone = reinterpret_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _sizes.northSouthHalo);
-        pair<float, float> *domainParamsEastHaloZone = reinterpret_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _sizes.northSouthHalo + _sizes.westEastHalo);
-
-        float tempNorthUpper, tempNorth, tempSouth, tempSouthLower, tempWestLeft, tempWest, tempEast, tempEastRight, tempCenter;
-        float domainParamsNorthUpper, domainParamsNorth, domainParamsSouth, domainParamsSouthLower, domainParamsWestLeft, domainParamsWest, domainParamsEast, domainParamsEastRight, domainParamsCenter;
-        int domainMapCenter;
-
-        size_t rowCornerOffset = corner == Corners::RIGHT_UPPER || corner == Corners::RIGHT_LOWER ? _sizes.localWidth - 2 : 0;
-        size_t rowOffset = cornerPoint == CornerPoints::LEFT_UPPER ? rowCornerOffset :
-                                cornerPoint == CornerPoints::RIGHT_UPPER ? rowCornerOffset + 1 :
-                                    cornerPoint == CornerPoints::LEFT_LOWER ? rowCornerOffset + _sizes.localWidth :
-                                        rowCornerOffset + _sizes.localWidth + 1;
-        size_t haloZoneCornerOffset = corner == Corners::RIGHT_UPPER || corner == Corners::LEFT_UPPER ? 0 : _sizes.localHeight - 2;
-        size_t haloZoneOffset = cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER ? haloZoneCornerOffset : haloZoneCornerOffset + 1;
-
-        if constexpr (corner == Corners::LEFT_UPPER || corner == Corners::RIGHT_UPPER)
-        {          
-            if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER)
-            {
-                tempNorthUpper = _tempHaloZones[0][rowOffset];
-                tempNorth = _tempHaloZones[0][_sizes.localWidth + rowOffset];
-                tempCenter = _tempTiles[current][rowOffset];
-                tempSouth = _tempTiles[current][_sizes.localWidth + rowOffset];
-                tempSouthLower = _tempTiles[current][2 * _sizes.localWidth + rowOffset];
-
-                domainParamsNorthUpper = _domainParamsHaloZone[rowOffset];
-                domainParamsNorth = _domainParamsHaloZone[_sizes.localWidth + rowOffset];
-                domainParamsCenter = _domainParamsTile[rowOffset];
-                domainParamsSouth = _domainParamsTile[_sizes.localWidth + rowOffset];
-                domainParamsSouthLower = _domainParamsTile[2 * _sizes.localWidth + rowOffset];
-
-                domainMapCenter = _domainMapTile[rowOffset];
-            }
-            else
-            {
-                tempNorthUpper = _tempHaloZones[0][rowOffset];
-                tempNorth = _tempTiles[current][rowOffset - _sizes.localWidth];
-                tempCenter = _tempTiles[current][rowOffset];
-                tempSouth = _tempTiles[current][_sizes.localWidth + rowOffset];
-                tempSouthLower = _tempTiles[current][2 * _sizes.localWidth + rowOffset];
-
-                domainParamsNorthUpper = _domainParamsHaloZone[rowOffset];
-                domainParamsNorth = _domainParamsTile[rowOffset - _sizes.localWidth];
-                domainParamsCenter = _domainParamsTile[rowOffset];
-                domainParamsSouth = _domainParamsTile[_sizes.localWidth + rowOffset];
-                domainParamsSouthLower = _domainParamsTile[2 * _sizes.localWidth + rowOffset];
-
-                domainMapCenter = _domainMapTile[rowOffset];
-            }
-        }
-        else
-        {
-            const size_t rowHaloZoneOffset = rowOffset + _sizes.northSouthHalo;
-            rowOffset += (_sizes.localHeight - 2) * _sizes.localWidth;
-
-            if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER)
-            {
-                tempNorth = _tempTiles[current][rowOffset - 2 * _sizes.localWidth];
-                tempNorthUpper = _tempTiles[current][rowOffset - _sizes.localWidth];
-                tempCenter = _tempTiles[current][rowOffset];
-                tempSouth = _tempTiles[current][rowOffset + _sizes.localWidth];
-                tempSouthLower = _tempHaloZones[0][rowHaloZoneOffset];
-
-                domainParamsNorth = _domainParamsTile[rowOffset - 2 * _sizes.localWidth];
-                domainParamsNorthUpper = _domainParamsTile[rowOffset - _sizes.localWidth];
-                domainParamsCenter = _domainParamsTile[rowOffset];
-                domainParamsSouth = _domainParamsTile[rowOffset + _sizes.localWidth];
-                domainParamsSouthLower = _domainParamsHaloZone[rowHaloZoneOffset];
-
-                domainMapCenter = _domainMapTile[rowOffset];
-            }
-            else
-            {
-                tempNorth = _tempTiles[current][rowOffset - 2 * _sizes.localWidth];
-                tempNorthUpper = _tempTiles[current][rowOffset - _sizes.localWidth];
-                tempCenter = _tempTiles[current][rowOffset];
-                tempSouth = _tempHaloZones[0][rowHaloZoneOffset - _sizes.localWidth];
-                tempSouthLower = _tempHaloZones[0][rowHaloZoneOffset];
-
-                domainParamsNorth = _domainParamsTile[rowOffset - 2 * _sizes.localWidth];
-                domainParamsNorthUpper = _domainParamsTile[rowOffset - _sizes.localWidth];
-                domainParamsCenter = _domainParamsTile[rowOffset];
-                domainParamsSouth = _domainParamsHaloZone[rowHaloZoneOffset - _sizes.localWidth];
-                domainParamsSouthLower = _domainParamsHaloZone[rowHaloZoneOffset];
-
-                domainMapCenter = _domainMapTile[rowOffset];
-            }
-        }
-
-        if constexpr (corner == Corners::LEFT_UPPER || corner == Corners::LEFT_LOWER)
-        {
-            if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::LEFT_LOWER)
-            {
-                tempWestLeft = tempWestHaloZone[haloZoneOffset].first;
-                tempWest = tempWestHaloZone[haloZoneOffset].second;
-                tempEast = _tempTiles[current][rowOffset + 1];
-                tempEastRight = _tempTiles[current][rowOffset + 2];
-
-                domainParamsWestLeft = domainParamsWestHaloZone[haloZoneOffset].first;
-                domainParamsWest = domainParamsWestHaloZone[haloZoneOffset].second;
-                domainParamsEast = _domainParamsTile[rowOffset + 1];
-                domainParamsEastRight = _domainParamsTile[rowOffset + 2];
-            }
-            else
-            {
-                tempWestLeft = tempWestHaloZone[haloZoneOffset].second;
-                tempWest = _tempTiles[current][rowOffset - 1];
-                tempEast = _tempTiles[current][rowOffset + 1];
-                tempEastRight = _tempTiles[current][rowOffset + 2];
-
-                domainParamsWestLeft = domainParamsWestHaloZone[haloZoneOffset].second;
-                domainParamsWest = _domainParamsTile[rowOffset - 1];
-                domainParamsEast = _domainParamsTile[rowOffset + 1];
-                domainParamsEastRight = _domainParamsTile[rowOffset + 2];
-            }
-        }
-        else
-        {
-            if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::LEFT_LOWER)
-            {
-                tempWestLeft = _tempTiles[current][rowOffset - 2];
-                tempWest = _tempTiles[current][rowOffset - 1];
-                tempEast = _tempTiles[current][rowOffset + 1];
-                tempEastRight = tempEastHaloZone[haloZoneOffset].first;
-
-                domainParamsWestLeft = _domainParamsTile[rowOffset - 2];
-                domainParamsWest = _domainParamsTile[rowOffset - 1];
-                domainParamsEast = _domainParamsTile[rowOffset + 1];
-                domainParamsEastRight = domainParamsEastHaloZone[haloZoneOffset].first;
-            }
-            else
-            {
-                tempWestLeft = _tempTiles[current][rowOffset - 2];
-                tempWest = _tempTiles[current][rowOffset - 1];
-                tempEast = tempEastHaloZone[haloZoneOffset].first;
-                tempEastRight = tempEastHaloZone[haloZoneOffset].second;
-
-                domainParamsWestLeft = _domainParamsTile[rowOffset - 2];
-                domainParamsWest = _domainParamsTile[rowOffset - 1];
-                domainParamsEast = domainParamsEastHaloZone[haloZoneOffset].first;
-                domainParamsEastRight = domainParamsEastHaloZone[haloZoneOffset].second;
-            }
-        }
-
-        return computePoint(
-            tempNorthUpper, tempNorth, tempSouth, tempSouthLower,
-            tempWestLeft, tempWest, tempEast, tempEastRight,
-            tempCenter,
-            domainParamsNorthUpper, domainParamsNorth, domainParamsSouth, domainParamsSouthLower,
-            domainParamsWestLeft, domainParamsWest, domainParamsEast, domainParamsEastRight,
-            domainParamsCenter,
-            domainMapCenter);
-    };
+    using Corners = ParallelHeatSolver::Corners;
+    using CornerPoints = ParallelHeatSolver::CornerPoints;
 
     // unpack data into separate pointers for easier access, simulate the complete tile with halo zones
     // temperature
@@ -518,22 +360,22 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // most left most upper value
         tempWestHaloZoneNext[0].first = 
             tempHaloTopRow0Next[0] = 
-            tempTileTopRow0Next[0] = computeCornerPoint.operator()<Corners::LEFT_UPPER, CornerPoints::LEFT_UPPER>();
+            tempTileTopRow0Next[0] = computeCornerPoint<Corners::LEFT_UPPER, CornerPoints::LEFT_UPPER>(current);
 
         // second most left most upper value
         tempWestHaloZoneNext[0].second = 
             tempHaloTopRow0Next[1] = 
-            tempTileTopRow0Next[1] = computeCornerPoint.operator()<Corners::LEFT_UPPER, CornerPoints::RIGHT_UPPER>();
+            tempTileTopRow0Next[1] = computeCornerPoint<Corners::LEFT_UPPER, CornerPoints::RIGHT_UPPER>(current);
 
         // most left second most upper value
         tempWestHaloZoneNext[1].first = 
             tempHaloTopRow1Next[0] = 
-            tempTileTopRow1Next[0] = computeCornerPoint.operator()<Corners::LEFT_UPPER, CornerPoints::LEFT_LOWER>();
+            tempTileTopRow1Next[0] = computeCornerPoint<Corners::LEFT_UPPER, CornerPoints::LEFT_LOWER>(current);
 
         // second most left second most upper value
         tempWestHaloZoneNext[1].second = 
             tempHaloTopRow1Next[1] = 
-            tempTileTopRow1Next[1] = computeCornerPoint.operator()<Corners::LEFT_UPPER, CornerPoints::RIGHT_LOWER>();
+            tempTileTopRow1Next[1] = computeCornerPoint<Corners::LEFT_UPPER, CornerPoints::RIGHT_LOWER>(current);
     }
 
     // north halo zone
@@ -570,14 +412,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // second most right most upper value
         tempEastHaloZoneNext[haloZoneIdx].first = 
             tempHaloTopRow0Next[verticalIdx] = 
-            tempTileTopRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_UPPER, CornerPoints::LEFT_UPPER>();
+            tempTileTopRow0Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_UPPER, CornerPoints::LEFT_UPPER>(current);
 
         verticalIdx++;
 
         // most right most upper value
         tempEastHaloZoneNext[haloZoneIdx].second = 
             tempHaloTopRow0Next[verticalIdx] = 
-            tempTileTopRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_UPPER, CornerPoints::RIGHT_UPPER>();
+            tempTileTopRow0Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_UPPER, CornerPoints::RIGHT_UPPER>(current);
 
         verticalIdx--;
         haloZoneIdx++;
@@ -585,14 +427,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // second most right second most upper value
         tempEastHaloZoneNext[haloZoneIdx].first = 
             tempHaloTopRow1Next[verticalIdx] = 
-            tempTileTopRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_UPPER, CornerPoints::LEFT_LOWER>();
+            tempTileTopRow1Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_UPPER, CornerPoints::LEFT_LOWER>(current);
 
         verticalIdx++;
 
         // most right second most upper value
         tempEastHaloZoneNext[haloZoneIdx].second = 
             tempHaloTopRow1Next[verticalIdx] = 
-            tempTileTopRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_UPPER, CornerPoints::RIGHT_LOWER>();
+            tempTileTopRow1Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_UPPER, CornerPoints::RIGHT_LOWER>(current);
     }
 
     // west halo zone
@@ -693,14 +535,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // most left most lower value
         tempWestHaloZoneNext[haloZoneIdx].first = 
             tempHaloBotRow0Next[verticalIdx] = 
-            tempTileBotRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::LEFT_LOWER, CornerPoints::LEFT_LOWER>();
+            tempTileBotRow0Next[verticalIdx] = computeCornerPoint<Corners::LEFT_LOWER, CornerPoints::LEFT_LOWER>(current);
 
         verticalIdx++;
 
         // second most left most lower value
         tempWestHaloZoneNext[haloZoneIdx].second = 
             tempHaloBotRow0Next[verticalIdx] = 
-            tempTileBotRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::LEFT_LOWER, CornerPoints::RIGHT_LOWER>();
+            tempTileBotRow0Next[verticalIdx] = computeCornerPoint<Corners::LEFT_LOWER, CornerPoints::RIGHT_LOWER>(current);
 
         verticalIdx--;
         haloZoneIdx--;
@@ -708,14 +550,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // most left second most lower value
         tempWestHaloZoneNext[haloZoneIdx].first = 
             tempHaloBotRow1Next[verticalIdx] = 
-            tempTileBotRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::LEFT_LOWER, CornerPoints::LEFT_UPPER>();
+            tempTileBotRow1Next[verticalIdx] = computeCornerPoint<Corners::LEFT_LOWER, CornerPoints::LEFT_UPPER>(current);
 
         verticalIdx++;
 
         // second most left second most lower value
         tempWestHaloZoneNext[haloZoneIdx].second = 
             tempHaloBotRow1Next[verticalIdx] = 
-            tempTileBotRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::LEFT_LOWER, CornerPoints::RIGHT_UPPER>();
+            tempTileBotRow1Next[verticalIdx] = computeCornerPoint<Corners::LEFT_LOWER, CornerPoints::RIGHT_UPPER>(current);
     }
 
     // south halo zone
@@ -752,14 +594,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // second most right most lower value
         tempEastHaloZoneNext[haloZoneIdx].first = 
             tempHaloBotRow0Next[verticalIdx] = 
-            tempTileBotRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_LOWER, CornerPoints::LEFT_LOWER>();
+            tempTileBotRow0Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_LOWER, CornerPoints::LEFT_LOWER>(current);
 
         verticalIdx++;
 
         // most right most lower value
         tempEastHaloZoneNext[haloZoneIdx].second = 
             tempHaloBotRow0Next[verticalIdx] = 
-            tempTileBotRow0Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_LOWER, CornerPoints::RIGHT_LOWER>();
+            tempTileBotRow0Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_LOWER, CornerPoints::RIGHT_LOWER>(current);
 
         verticalIdx--;
         haloZoneIdx--;
@@ -767,14 +609,14 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
         // second most right second most lower value
         tempEastHaloZoneNext[haloZoneIdx].first = 
             tempHaloBotRow1Next[verticalIdx] = 
-            tempTileBotRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_LOWER, CornerPoints::LEFT_UPPER>();
+            tempTileBotRow1Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_LOWER, CornerPoints::LEFT_UPPER>(current);
 
         verticalIdx++;
 
         // most right second most lower value
         tempEastHaloZoneNext[haloZoneIdx].second = 
             tempHaloBotRow1Next[verticalIdx] = 
-            tempTileBotRow1Next[verticalIdx] = computeCornerPoint.operator()<Corners::RIGHT_LOWER, CornerPoints::RIGHT_UPPER>();
+            tempTileBotRow1Next[verticalIdx] = computeCornerPoint<Corners::RIGHT_LOWER, CornerPoints::RIGHT_UPPER>(current);
     }
 }
 
@@ -971,21 +813,24 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
     float *tempNextTile = _tempTiles[next].data();
     float *domainParamsTile = _domainParamsTile.data();
     int *domainMapTile = _domainMapTile.data();
+    size_t localHeight = _sizes.localHeight;
+    size_t localWidth = _sizes.localWidth;
 
-    for (size_t i = 2; i < _sizes.localHeight - 2; i++)
+    #pragma omp parallel for firstprivate(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile, localHeight, localWidth) schedule(static)
+    for (size_t i = 2; i < localHeight - 2; i++)
     {
-        const int northUpperIdx = (i - 2) * _sizes.localWidth;
-        const int northIdx = (i - 1) * _sizes.localWidth;
-        const int centerIdx = i * _sizes.localWidth;
-        const int southIdx = (i + 1) * _sizes.localWidth;
-        const int southLowerIdx = (i + 2) * _sizes.localWidth;
-        const int westLeftIdx = i * _sizes.localWidth - 2;
-        const int westIdx = i * _sizes.localWidth - 1;
-        const int eastIdx = i * _sizes.localWidth + 1;
-        const int eastRightIdx = i * _sizes.localWidth + 2;
+        const int northUpperIdx = (i - 2) * localWidth;
+        const int northIdx = (i - 1) * localWidth;
+        const int centerIdx = i * localWidth;
+        const int southIdx = (i + 1) * localWidth;
+        const int southLowerIdx = (i + 2) * localWidth;
+        const int westLeftIdx = i * localWidth - 2;
+        const int westIdx = i * localWidth - 1;
+        const int eastIdx = i * localWidth + 1;
+        const int eastRightIdx = i * localWidth + 2;
 
-        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : 64) simdlen(16)
-        for (size_t j = 2; j < _sizes.localWidth - 2; j++)
+        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : AlignedAllocator<>::alignment) simdlen(16)
+        for (size_t j = 2; j < localWidth - 2; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
@@ -1005,21 +850,24 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
     float *tempNextTile = _tempTiles[next].data();
     float *domainParamsTile = _domainParamsTile.data();
     int *domainMapTile = _domainMapTile.data();
+    size_t localHeight = _sizes.localHeightWithHalos;
+    size_t localWidth = _sizes.localWidthWithHalos;
 
-    for (size_t i = 4; i < _sizes.localHeightWithHalos - 4; i++)
+    #pragma omp parallel for firstprivate(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile, localHeight, localWidth) schedule(static)
+    for (size_t i = 4; i < localHeight - 4; i++)
     {
-        const int northUpperIdx = (i - 2) * _sizes.localWidthWithHalos;
-        const int northIdx = (i - 1) * _sizes.localWidthWithHalos;
-        const int centerIdx = i * _sizes.localWidthWithHalos;
-        const int southIdx = (i + 1) * _sizes.localWidthWithHalos;
-        const int southLowerIdx = (i + 2) * _sizes.localWidthWithHalos;
+        const int northUpperIdx = (i - 2) * localWidth;
+        const int northIdx = (i - 1) * localWidth;
+        const int centerIdx = i * localWidth;
+        const int southIdx = (i + 1) * localWidth;
+        const int southLowerIdx = (i + 2) * localWidth;
         const int westLeftIdx = centerIdx - 2;
         const int westIdx = centerIdx - 1;
         const int eastIdx = centerIdx + 1;
         const int eastRightIdx = centerIdx + 2;
 
-        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : 64) simdlen(16)
-        for (size_t j = 4; j < _sizes.localWidthWithHalos - 4; j++)
+        #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : AlignedAllocator<>::alignment) simdlen(16)
+        for (size_t j = 4; j < localWidth - 4; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
@@ -1068,7 +916,6 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_Raw(size_t iterati
 void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t iteration)
 {
     float sum = 0;
-    pair<float, float> *tempWestHaloZoneNext = reinterpret_cast<pair<float, float> *>(_tempHaloZones[1].data() + 2 * _sizes.northSouthHalo);
     if (_decomposition.nx == 1) // there is only one column, middle column of the tile must be sampled (can happen only with 1 or 2 processes)
     {
         int midColIdx = _sizes.localWidthWithHalos >> 1;

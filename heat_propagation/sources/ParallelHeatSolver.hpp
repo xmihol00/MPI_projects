@@ -69,6 +69,10 @@ public:
 
 protected:
 private:
+    enum { NORTH = 0, SOUTH, WEST, EAST };
+    enum class Corners { LEFT_UPPER, RIGHT_UPPER, LEFT_LOWER, RIGHT_LOWER };
+    enum class CornerPoints { LEFT_UPPER, RIGHT_UPPER, LEFT_LOWER, RIGHT_LOWER };
+
     /**
      * @brief Get type of the code.
      * @return Returns type of the code.
@@ -224,6 +228,9 @@ private:
         int domainMapCenter
     );
 
+    template<Corners corner, CornerPoints cornerPoint>
+    inline constexpr float computeCornerPoint(bool current);
+
     /// @brief Code type string.
     static constexpr std::string_view codeType{"par"};
 
@@ -239,8 +246,6 @@ private:
 
     /// @brief Output file handle (parallel or sequential).
     Hdf5FileHandle mFileHandle{};
-
-    enum { NORTH = 0, SOUTH, WEST, EAST };
 
     MPI_Comm _topologyComm;
     MPI_Comm _midColComm;
@@ -361,6 +366,168 @@ inline constexpr float ParallelHeatSolver::computePoint(
     }
 
     return pointTemp;
+}
+
+template<ParallelHeatSolver::Corners corner, ParallelHeatSolver::CornerPoints cornerPoint>
+inline constexpr float ParallelHeatSolver::computeCornerPoint(bool current)
+{
+    using namespace std;
+
+    pair<float, float> *tempWestHaloZone = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _sizes.northSouthHalo);
+    pair<float, float> *tempEastHaloZone = reinterpret_cast<pair<float, float> *>(_tempHaloZones[0].data() + 2 * _sizes.northSouthHalo + _sizes.westEastHalo);
+    
+    pair<float, float> *domainParamsWestHaloZone = reinterpret_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _sizes.northSouthHalo);
+    pair<float, float> *domainParamsEastHaloZone = reinterpret_cast<pair<float, float> *>(_domainParamsHaloZone.data() + 2 * _sizes.northSouthHalo + _sizes.westEastHalo);
+
+    float tempNorthUpper, tempNorth, tempSouth, tempSouthLower, tempWestLeft, tempWest, tempEast, tempEastRight, tempCenter;
+    float domainParamsNorthUpper, domainParamsNorth, domainParamsSouth, domainParamsSouthLower, domainParamsWestLeft, domainParamsWest, domainParamsEast, domainParamsEastRight, domainParamsCenter;
+    int domainMapCenter;
+
+    size_t rowCornerOffset = corner == Corners::RIGHT_UPPER || corner == Corners::RIGHT_LOWER ? _sizes.localWidth - 2 : 0;
+    size_t rowOffset = cornerPoint == CornerPoints::LEFT_UPPER ? rowCornerOffset :
+                            cornerPoint == CornerPoints::RIGHT_UPPER ? rowCornerOffset + 1 :
+                                cornerPoint == CornerPoints::LEFT_LOWER ? rowCornerOffset + _sizes.localWidth :
+                                    rowCornerOffset + _sizes.localWidth + 1;
+    size_t haloZoneCornerOffset = corner == Corners::RIGHT_UPPER || corner == Corners::LEFT_UPPER ? 0 : _sizes.localHeight - 2;
+    size_t haloZoneOffset = cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER ? haloZoneCornerOffset : haloZoneCornerOffset + 1;
+
+    if constexpr (corner == Corners::LEFT_UPPER || corner == Corners::RIGHT_UPPER)
+    {          
+        if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER)
+        {
+            tempNorthUpper = _tempHaloZones[0][rowOffset];
+            tempNorth = _tempHaloZones[0][_sizes.localWidth + rowOffset];
+            tempCenter = _tempTiles[current][rowOffset];
+            tempSouth = _tempTiles[current][_sizes.localWidth + rowOffset];
+            tempSouthLower = _tempTiles[current][2 * _sizes.localWidth + rowOffset];
+
+            domainParamsNorthUpper = _domainParamsHaloZone[rowOffset];
+            domainParamsNorth = _domainParamsHaloZone[_sizes.localWidth + rowOffset];
+            domainParamsCenter = _domainParamsTile[rowOffset];
+            domainParamsSouth = _domainParamsTile[_sizes.localWidth + rowOffset];
+            domainParamsSouthLower = _domainParamsTile[2 * _sizes.localWidth + rowOffset];
+
+            domainMapCenter = _domainMapTile[rowOffset];
+        }
+        else
+        {
+            tempNorthUpper = _tempHaloZones[0][rowOffset];
+            tempNorth = _tempTiles[current][rowOffset - _sizes.localWidth];
+            tempCenter = _tempTiles[current][rowOffset];
+            tempSouth = _tempTiles[current][_sizes.localWidth + rowOffset];
+            tempSouthLower = _tempTiles[current][2 * _sizes.localWidth + rowOffset];
+
+            domainParamsNorthUpper = _domainParamsHaloZone[rowOffset];
+            domainParamsNorth = _domainParamsTile[rowOffset - _sizes.localWidth];
+            domainParamsCenter = _domainParamsTile[rowOffset];
+            domainParamsSouth = _domainParamsTile[_sizes.localWidth + rowOffset];
+            domainParamsSouthLower = _domainParamsTile[2 * _sizes.localWidth + rowOffset];
+
+            domainMapCenter = _domainMapTile[rowOffset];
+        }
+    }
+    else
+    {
+        const size_t rowHaloZoneOffset = rowOffset + _sizes.northSouthHalo;
+        rowOffset += (_sizes.localHeight - 2) * _sizes.localWidth;
+
+        if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::RIGHT_UPPER)
+        {
+            tempNorth = _tempTiles[current][rowOffset - 2 * _sizes.localWidth];
+            tempNorthUpper = _tempTiles[current][rowOffset - _sizes.localWidth];
+            tempCenter = _tempTiles[current][rowOffset];
+            tempSouth = _tempTiles[current][rowOffset + _sizes.localWidth];
+            tempSouthLower = _tempHaloZones[0][rowHaloZoneOffset];
+
+            domainParamsNorth = _domainParamsTile[rowOffset - 2 * _sizes.localWidth];
+            domainParamsNorthUpper = _domainParamsTile[rowOffset - _sizes.localWidth];
+            domainParamsCenter = _domainParamsTile[rowOffset];
+            domainParamsSouth = _domainParamsTile[rowOffset + _sizes.localWidth];
+            domainParamsSouthLower = _domainParamsHaloZone[rowHaloZoneOffset];
+
+            domainMapCenter = _domainMapTile[rowOffset];
+        }
+        else
+        {
+            tempNorth = _tempTiles[current][rowOffset - 2 * _sizes.localWidth];
+            tempNorthUpper = _tempTiles[current][rowOffset - _sizes.localWidth];
+            tempCenter = _tempTiles[current][rowOffset];
+            tempSouth = _tempHaloZones[0][rowHaloZoneOffset - _sizes.localWidth];
+            tempSouthLower = _tempHaloZones[0][rowHaloZoneOffset];
+
+            domainParamsNorth = _domainParamsTile[rowOffset - 2 * _sizes.localWidth];
+            domainParamsNorthUpper = _domainParamsTile[rowOffset - _sizes.localWidth];
+            domainParamsCenter = _domainParamsTile[rowOffset];
+            domainParamsSouth = _domainParamsHaloZone[rowHaloZoneOffset - _sizes.localWidth];
+            domainParamsSouthLower = _domainParamsHaloZone[rowHaloZoneOffset];
+
+            domainMapCenter = _domainMapTile[rowOffset];
+        }
+    }
+
+    if constexpr (corner == Corners::LEFT_UPPER || corner == Corners::LEFT_LOWER)
+    {
+        if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::LEFT_LOWER)
+        {
+            tempWestLeft = tempWestHaloZone[haloZoneOffset].first;
+            tempWest = tempWestHaloZone[haloZoneOffset].second;
+            tempEast = _tempTiles[current][rowOffset + 1];
+            tempEastRight = _tempTiles[current][rowOffset + 2];
+
+            domainParamsWestLeft = domainParamsWestHaloZone[haloZoneOffset].first;
+            domainParamsWest = domainParamsWestHaloZone[haloZoneOffset].second;
+            domainParamsEast = _domainParamsTile[rowOffset + 1];
+            domainParamsEastRight = _domainParamsTile[rowOffset + 2];
+        }
+        else
+        {
+            tempWestLeft = tempWestHaloZone[haloZoneOffset].second;
+            tempWest = _tempTiles[current][rowOffset - 1];
+            tempEast = _tempTiles[current][rowOffset + 1];
+            tempEastRight = _tempTiles[current][rowOffset + 2];
+
+            domainParamsWestLeft = domainParamsWestHaloZone[haloZoneOffset].second;
+            domainParamsWest = _domainParamsTile[rowOffset - 1];
+            domainParamsEast = _domainParamsTile[rowOffset + 1];
+            domainParamsEastRight = _domainParamsTile[rowOffset + 2];
+        }
+    }
+    else
+    {
+        if constexpr (cornerPoint == CornerPoints::LEFT_UPPER || cornerPoint == CornerPoints::LEFT_LOWER)
+        {
+            tempWestLeft = _tempTiles[current][rowOffset - 2];
+            tempWest = _tempTiles[current][rowOffset - 1];
+            tempEast = _tempTiles[current][rowOffset + 1];
+            tempEastRight = tempEastHaloZone[haloZoneOffset].first;
+
+            domainParamsWestLeft = _domainParamsTile[rowOffset - 2];
+            domainParamsWest = _domainParamsTile[rowOffset - 1];
+            domainParamsEast = _domainParamsTile[rowOffset + 1];
+            domainParamsEastRight = domainParamsEastHaloZone[haloZoneOffset].first;
+        }
+        else
+        {
+            tempWestLeft = _tempTiles[current][rowOffset - 2];
+            tempWest = _tempTiles[current][rowOffset - 1];
+            tempEast = tempEastHaloZone[haloZoneOffset].first;
+            tempEastRight = tempEastHaloZone[haloZoneOffset].second;
+
+            domainParamsWestLeft = _domainParamsTile[rowOffset - 2];
+            domainParamsWest = _domainParamsTile[rowOffset - 1];
+            domainParamsEast = domainParamsEastHaloZone[haloZoneOffset].first;
+            domainParamsEastRight = domainParamsEastHaloZone[haloZoneOffset].second;
+        }
+    }
+
+    return computePoint(
+        tempNorthUpper, tempNorth, tempSouth, tempSouthLower,
+        tempWestLeft, tempWest, tempEast, tempEastRight,
+        tempCenter,
+        domainParamsNorthUpper, domainParamsNorth, domainParamsSouth, domainParamsSouthLower,
+        domainParamsWestLeft, domainParamsWest, domainParamsEast, domainParamsEastRight,
+        domainParamsCenter,
+        domainMapCenter);
 }
 
 #endif /* PARALLEL_HEAT_SOLVER_HPP */

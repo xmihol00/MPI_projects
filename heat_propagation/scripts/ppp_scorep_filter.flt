@@ -1,0 +1,11 @@
+SCOREP_REGION_NAMES_BEGIN
+  EXCLUDE
+    HeatSolverBase::computePoint
+    ParallelHeatSolver::computeCornerPoint
+    ParallelHeatSolver::computePoint
+    ParallelHeatSolver::isNotTopRow
+    ParallelHeatSolver::isNotBottomRow
+    ParallelHeatSolver::isNotLeftColumn
+    ParallelHeatSolver::isNotRightColumn
+    *std::*
+SCOREP_REGION_NAMES_END
