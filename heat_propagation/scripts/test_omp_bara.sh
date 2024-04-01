@@ -17,23 +17,23 @@ for tile_size in "${tile_sizes[@]}"; do
                         echo "Tile size: $tile_size, Processes: $process, Iterations: $iteration, Threads: $thread" | tee -a results.txt
                         
                         if [ $((2*$process)) -lt $tile_size ]; then
-                            echo "command -s $tile_size: mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp" | tee -a results.txt
-                            mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp | tee -a results.txt
-                            ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                            echo "command -s $tile_size: mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp" | tee -a results.txt
+                            mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp | tee -a results.txt
+                            ../scripts/h5_comparrison.sh | tee -a results.txt
                             echo "" | tee -a results.txt
-                            echo "command -s $tile_size: mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp -p" | tee -a results.txt
-                            mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp -p | tee -a results.txt
-                            ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                            echo "command -s $tile_size: mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp -p" | tee -a results.txt
+                            mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -o temp -p | tee -a results.txt
+                            ../scripts/h5_comparrison.sh | tee -a results.txt
                             echo "" | tee -a results.txt
                         fi
 
-                        echo "command -s $tile_size: mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp" | tee -a results.txt
-                        mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp | tee -a results.txt
-                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        echo "command -s $tile_size: mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp" | tee -a results.txt
+                        mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp | tee -a results.txt
+                        ../scripts/h5_comparrison.sh | tee -a results.txt
                         echo "" | tee -a results.txt
-                        echo "command -s $tile_size: mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp -p" | tee -a results.txt
-                        mpirun -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp -p | tee -a results.txt
-                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        echo "command -s $tile_size: mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp -p" | tee -a results.txt
+                        mpiexec -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -t $thread -v -g -o temp -p | tee -a results.txt
+                        ../scripts/h5_comparrison.sh | tee -a results.txt
                         echo "" | tee -a results.txt
                     done
                 done
