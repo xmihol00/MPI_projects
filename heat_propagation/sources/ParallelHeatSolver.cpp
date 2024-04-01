@@ -33,7 +33,14 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
 
     mSimulationProps.getDecompGrid(_decomposition.nx, _decomposition.ny);
 
-    _sizes.globalEdge = mMaterialProps.getEdgeSize();
+    // check if it is possible to create a 2D grid of nodes
+    if (mMaterialProps.getEdgeSize() >= (1UL << 31) || mMaterialProps.getEdgeSize() * mMaterialProps.getEdgeSize() >= (1UL << 31))
+    {
+        cerr << "The edge size of the domain is too large for the MPI communication. The power of 2 of the edge size must be less than 2^31." << endl;
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
+    _sizes.globalEdge = static_cast<int>(mMaterialProps.getEdgeSize()); // MPI does not support size_t e.g. in tile allocation
     _sizes.localWidth = _sizes.globalEdge / _decomposition.nx;
     _sizes.localHeight = _sizes.globalEdge / _decomposition.ny;
     _sizes.localHeightWithHalos = _sizes.localHeight + 4;
@@ -180,8 +187,8 @@ void ParallelHeatSolver::allocLocalTiles()
 
 void ParallelHeatSolver::initDataTypes()
 {
-    int tileSize[2] = {static_cast<int>(_sizes.globalEdge), static_cast<int>(_sizes.globalEdge)};
-    int localTileSize[2] = {static_cast<int>(_sizes.localHeight), static_cast<int>(_sizes.localWidth)};
+    int tileSize[2] = {_sizes.globalEdge, _sizes.globalEdge};
+    int localTileSize[2] = {_sizes.localHeight, _sizes.localWidth};
     int starts[2] = {0, 0};
     
     // temperature/domain parameters scatter and gather data type
@@ -381,7 +388,7 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
     // north halo zone
     if (isNotTopRow()) // node is not in the top row
     {
-        for (size_t i = 2; i < _sizes.localWidth - 2; i++)
+        for (int i = 2; i < _sizes.localWidth - 2; i++)
         {
             tempHaloTopRow0Next[i] = tempTileTopRow0Next[i] = computePoint(
                 tempTopRow0Current[i], tempTopRow1Current[i], tempTopRow3Current[i], tempTopRow4Current[i],
@@ -440,7 +447,7 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
     // west halo zone
     if (isNotLeftColumn()) // node is not in the left column
     {
-        for (size_t i = 2; i < _sizes.localHeight - 2; i++)
+        for (int i = 2; i < _sizes.localHeight - 2; i++)
         {
             int northUpperIdx = (i - 2) * _sizes.localWidth;
             int northIdx = (i - 1) * _sizes.localWidth;
@@ -484,7 +491,7 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
     // east halo zone
     if (isNotRightColumn()) // node is not in the right column
     {
-        for (size_t i = 2; i < _sizes.localHeight - 2; i++)
+        for (int i = 2; i < _sizes.localHeight - 2; i++)
         {
             int northUpperIdx = (i - 2) * _sizes.localWidth + _sizes.localWidth - 2;
             int northIdx = (i - 1) * _sizes.localWidth + _sizes.localWidth - 2;
@@ -563,7 +570,7 @@ void ParallelHeatSolver::computeTempHaloZones_Raw(bool current, bool next)
     // south halo zone
     if (isNotBottomRow()) // node is not in the bottom row
     {
-        for (size_t i = 2; i < _sizes.localWidth - 2; i++)
+        for (int i = 2; i < _sizes.localWidth - 2; i++)
         {
             tempHaloBotRow0Next[i] = tempTileBotRow0Next[i] = computePoint(
                 tempBotRow4Current[i], tempBotRow3Current[i], tempBotRow1Current[i], tempBotRow0Current[i],
@@ -665,7 +672,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // north halo zone
     if (isNotTopRow())
     {
-        for (size_t i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++)
+        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++)
         {
             tempNextTopRow2[i] = computePoint(
                 tempCurrentTopRow0[i], tempCurrentTopRow1[i], tempCurrentTopRow3[i], tempCurrentTopRow4[i],
@@ -689,7 +696,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // west zone
     if (isNotLeftColumn())
     {
-        for (size_t i = 4; i < _sizes.localHeightWithHalos - 4; i++)
+        for (int i = 4; i < _sizes.localHeightWithHalos - 4; i++)
         {
             int northUpperIdx = (i - 2) * _sizes.localWidthWithHalos + 2;
             int northIdx = (i - 1) * _sizes.localWidthWithHalos + 2;
@@ -737,7 +744,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // east zone
     if (isNotRightColumn())
     {
-        for (size_t i = 4; i < _sizes.localHeightWithHalos - 4; i++)
+        for (int i = 4; i < _sizes.localHeightWithHalos - 4; i++)
         {
             int northUpperIdx = (i - 1) * _sizes.localWidthWithHalos - 4;
             int northIdx = i * _sizes.localWidthWithHalos - 4;
@@ -785,7 +792,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // south halo zone
     if (isNotBottomRow())
     {
-        for (size_t i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++)
+        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++)
         {
             tempNextBotRow2[i] = computePoint(
                 tempCurrentBotRow4[i], tempCurrentBotRow3[i], tempCurrentBotRow1[i], tempCurrentBotRow0[i],
@@ -813,11 +820,11 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
     float *tempNextTile = _tempTiles[next].data();
     float *domainParamsTile = _domainParamsTile.data();
     int *domainMapTile = _domainMapTile.data();
-    size_t localHeight = _sizes.localHeight;
-    size_t localWidth = _sizes.localWidth;
+    int localHeight = _sizes.localHeight;
+    int localWidth = _sizes.localWidth;
 
     #pragma omp parallel for firstprivate(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile, localHeight, localWidth) schedule(static)
-    for (size_t i = 2; i < localHeight - 2; i++)
+    for (int i = 2; i < localHeight - 2; i++)
     {
         const int northUpperIdx = (i - 2) * localWidth;
         const int northIdx = (i - 1) * localWidth;
@@ -830,7 +837,7 @@ void ParallelHeatSolver::computeTempTile_Raw(bool current, bool next)
         const int eastRightIdx = i * localWidth + 2;
 
         #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : AlignedAllocator<>::alignment) simdlen(16)
-        for (size_t j = 2; j < localWidth - 2; j++)
+        for (int j = 2; j < localWidth - 2; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
@@ -850,11 +857,11 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
     float *tempNextTile = _tempTiles[next].data();
     float *domainParamsTile = _domainParamsTile.data();
     int *domainMapTile = _domainMapTile.data();
-    size_t localHeight = _sizes.localHeightWithHalos;
-    size_t localWidth = _sizes.localWidthWithHalos;
+    int localHeight = _sizes.localHeightWithHalos;
+    int localWidth = _sizes.localWidthWithHalos;
 
     #pragma omp parallel for firstprivate(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile, localHeight, localWidth) schedule(static)
-    for (size_t i = 4; i < localHeight - 4; i++)
+    for (int i = 4; i < localHeight - 4; i++)
     {
         const int northUpperIdx = (i - 2) * localWidth;
         const int northIdx = (i - 1) * localWidth;
@@ -867,7 +874,7 @@ void ParallelHeatSolver::computeTempTile_DataType(bool current, bool next)
         const int eastRightIdx = centerIdx + 2;
 
         #pragma omp simd aligned(tempCurrentTile, tempNextTile, domainParamsTile, domainMapTile : AlignedAllocator<>::alignment) simdlen(16)
-        for (size_t j = 4; j < localWidth - 4; j++)
+        for (int j = 4; j < localWidth - 4; j++)
         {
             tempNextTile[centerIdx + j] = computePoint(
                 tempCurrentTile[northUpperIdx + j], tempCurrentTile[northIdx + j], tempCurrentTile[southIdx + j], tempCurrentTile[southLowerIdx + j],
@@ -888,7 +895,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_Raw(size_t iterati
     if (_decomposition.nx == 1) // there is only one column, middle column of the tile must be sampled (can happen only with 1 or 2 processes)
     {
         int midColIdx = _sizes.localWidth >> 1;
-        for (size_t i = 0; i < _sizes.localHeight; i++)
+        for (int i = 0; i < _sizes.localHeight; i++)
         {
             sum += _tempTiles[1][i * _sizes.localWidth + midColIdx];
         }
@@ -896,7 +903,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_Raw(size_t iterati
     }
     else // there are multiple columns, left most column must be sampled
     {
-        for (size_t i = 0; i < _sizes.localHeight; i++)
+        for (int i = 0; i < _sizes.localHeight; i++)
         {
             sum += tempWestHaloZoneNext[i].first;
         }
@@ -919,7 +926,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t it
     if (_decomposition.nx == 1) // there is only one column, middle column of the tile must be sampled (can happen only with 1 or 2 processes)
     {
         int midColIdx = _sizes.localWidthWithHalos >> 1;
-        for (size_t i = 2; i < _sizes.localHeightWithHalos - 2; i++)
+        for (int i = 2; i < _sizes.localHeightWithHalos - 2; i++)
         {
             sum += _tempTiles[!(iteration & 1)][i * _sizes.localWidthWithHalos + midColIdx + 2];
         }
@@ -927,7 +934,7 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t it
     }
     else // there are multiple columns, left most column must be sampled
     {
-        for (size_t i = 2; i < _sizes.localHeightWithHalos - 2; i++)
+        for (int i = 2; i < _sizes.localHeightWithHalos - 2; i++)
         {
             sum += _tempTiles[!(iteration & 1)][i * _sizes.localWidthWithHalos + 1];
         }
@@ -949,11 +956,11 @@ void ParallelHeatSolver::computeAndPrintMidColAverageSequential(float timeElapse
     if (_worldRank == 0)
     {
         float averageTemp = 0;
-        for (size_t i = 0; i < mMaterialProps.getEdgeSize(); i++)
+        for (int i = 0; i < _sizes.globalEdge; i++)
         {
-            averageTemp += outResult[i * mMaterialProps.getEdgeSize() + (mMaterialProps.getEdgeSize() >> 1)];
+            averageTemp += outResult[i * _sizes.globalEdge + (_sizes.globalEdge >> 1)];
         }
-        averageTemp /= mMaterialProps.getEdgeSize();
+        averageTemp /= _sizes.globalEdge;
 
         printFinalReport(timeElapsed, averageTemp);
     }
@@ -1049,7 +1056,7 @@ void ParallelHeatSolver::scatterInitialData_Raw()
     copy(_domainParamsTile.end() - _sizes.northSouthHalo, _domainParamsTile.end(), _domainParamsHaloZoneTmp.begin() + _sizes.northSouthHalo); // South
 
     // copy to halo zones West and East
-    for (size_t i = 0; i < _sizes.localHeight; i++)
+    for (int i = 0; i < _sizes.localHeight; i++)
     {
         _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i] = _tempTiles[0][i * _sizes.localWidth];                                                   // West
         _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i + 1] = _tempTiles[0][i * _sizes.localWidth + 1];                                           // West
@@ -1112,7 +1119,7 @@ void ParallelHeatSolver::prepareInitialHaloZones()
     copy(_domainParamsTile.end() - _sizes.northSouthHalo, _domainParamsTile.end(), _domainParamsHaloZoneTmp.begin() + _sizes.northSouthHalo); // South
 
     // copy to halo zones West and East
-    for (size_t i = 0; i < _sizes.localHeight; i++)
+    for (int i = 0; i < _sizes.localHeight; i++)
     {
         // use the odd halo zone, so that after the initial exchange, the even halo zone can be used for the first iteration
         _tempHaloZones[1][2 * _sizes.northSouthHalo + 2 * i] = _tempTiles[0][i * _sizes.localWidth];                                                   // West
@@ -1313,12 +1320,12 @@ void ParallelHeatSolver::storeDataIntoFileParallel(size_t iteration, int halloOf
     }
 
 #ifdef H5_HAVE_PARALLEL
-    array<hsize_t, 2> gridSizes{static_cast<hsize_t>(mMaterialProps.getEdgeSize()), static_cast<hsize_t>(mMaterialProps.getEdgeSize())};
+    array<hsize_t, 2> gridSizes{static_cast<hsize_t>(_sizes.globalEdge), static_cast<hsize_t>(_sizes.globalEdge)};
     array<hsize_t, 2> localGridSizes{static_cast<hsize_t>(_sizes.localHeight + 2 * halloOffset), static_cast<hsize_t>(_sizes.localWidth + 2 * halloOffset)};
     array<hsize_t, 2> localGridSizesWithoutHalo{static_cast<hsize_t>(_sizes.localHeight), static_cast<hsize_t>(_sizes.localWidth)};
     array<hsize_t, 2> tileOffsets{static_cast<hsize_t>(_sizes.localHeight * (_worldRank / _decomposition.nx)),
                                   static_cast<hsize_t>(_sizes.localWidth * (_worldRank % _decomposition.nx))};
-    array<hsize_t, 2> halloOffsets{halloOffset, halloOffset};
+    array<hsize_t, 2> halloOffsets{static_cast<hsize_t>(halloOffset), static_cast<hsize_t>(halloOffset)};
     array<hsize_t, 2> blockCounts{1, 1};
 
     // Create new HDF5 group in the output file

@@ -274,16 +274,16 @@ private:
 
     struct Sizes // TODO change to int wherever possible
     {
-        size_t globalEdge;
-        size_t localHeight;
-        size_t localHeightWithHalos;
-        size_t localWidth;
-        size_t localWidthWithHalos;
-        size_t globalTile;
-        size_t localTile;
-        size_t localTileWithHalos;
-        size_t northSouthHalo;
-        size_t westEastHalo;
+        int globalEdge;
+        int localHeight;
+        int localHeightWithHalos;
+        int localWidth;
+        int localWidthWithHalos;
+        int globalTile;
+        int localTile;
+        int localTileWithHalos;
+        int northSouthHalo;
+        int westEastHalo;
     } _sizes;
     
     struct SimulationHyperParams
