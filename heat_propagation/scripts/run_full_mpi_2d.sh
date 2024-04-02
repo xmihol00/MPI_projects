@@ -9,6 +9,9 @@
 
 source load_modules.sh
 
+declare -a SIZES=(256 512 1024 2048 4096)
+declare -a PROCESSES=(1 16 32 64 128)
+
 STDOUT_FILE="run_full_mpi_2d_out.csv"
 STDERR_FILE="run_full_mpi_2d_err.txt"
 BINARY_PATH="../build/ppp_proj01"
@@ -26,13 +29,13 @@ mkdir -p $OUT_FILE_PATH
 
 # Doplnte vhodne nastavenie Lustre file system #
 ################################################
-#lfs setstripe -S 1M -c 16 /scratch/project/dd-23-135/$USER
+lfs setstripe -S 1M -c 16 /scratch/project/dd-23-135/$USER
 ################################################
 
 DISK_WRITE_INTENSITY=50
 
-for procs in 1 16 32 64 128; do
-    for size in 256 512 1024 2048 4096; do
+for procs in ${PROCESSES[*]}; do
+    for size in ${SIZES[*]}; do
         B="-b"
         
         if [ "$procs" -eq 1 ]; then
@@ -45,7 +48,7 @@ for procs in 1 16 32 64 128; do
             fi
         else
             nnodes=$((procs/SLURM_NTASKS_PER_NODE))
-            if [ "$nnodes" -eq 0]; then
+            if [ "$nnodes" -eq 0 ]; then
                 nnodes=1
             fi
 
