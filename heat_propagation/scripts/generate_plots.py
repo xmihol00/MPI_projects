@@ -2,12 +2,23 @@
 
 import csv
 import matplotlib.pyplot as plt
+import sys
 
 suffixes=["_p2p", "_p2p_seq_IO", "_p2p_par_IO" ,"_rma", "_rma_seq_IO", "_rma_par_IO"] 
 
-ploth_width  = 4 
-ploth_height = 3
+plot_width  = 4 
+plot_height = 3
 legend_font_size = 6
+plot_filetype = ".svg"
+dpi = None
+
+# check if "png" is passed as the 1st argument and change the plot settings
+if len(sys.argv) > 1 and sys.argv[1] == "png":
+    plot_filetype = ".png"
+    legend_font_size = 12
+    plot_width = 12
+    plot_height = 9
+    dpi = 400
 
 x_axis_points = [1, 16, 32, 64, 128]
 #x_axis_points = [1,2,4]
@@ -31,7 +42,7 @@ for i in range(0,len(data)-headerlen):
 for comm_type in ['p2p', 'rma']:
 
     # scaling
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -50,16 +61,17 @@ for comm_type in ['p2p', 'rma']:
             plt.plot(x_axis_points[0:len(scaling_values)], scaling_values, marker=plot_marker, label=key)
 
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(scaling_values)])
     plt.ylabel('Iteration time [ms]')
-    plt.yscale('log')
-    plt.xscale('log')
+    plt.yscale('log', base=2)
+    plt.xscale('log', base=2)
     plt.legend( prop={'size': legend_font_size})
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_scaling_mpi_" + comm_type + ".svg")
+    plt.tight_layout() # plot only the graph with minimal margins
+    plt.savefig("ppp_scaling_mpi_" + comm_type + plot_filetype, dpi=dpi)
 
     # speedup
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -80,13 +92,14 @@ for comm_type in ['p2p', 'rma']:
 
     plt.legend(prop={'size': legend_font_size})
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(speedup_values)])
     plt.ylabel('Speedup')
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_speedup_mpi_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_speedup_mpi_" + comm_type + plot_filetype, dpi=dpi)
 
     # efficiency
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -110,12 +123,13 @@ for comm_type in ['p2p', 'rma']:
 
             
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(efficiency_values)])
     plt.ylabel('Efficiency [%]')
     plt.legend(prop={'size': legend_font_size})
     plt.grid(True)
 #plt.show()
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_efficiency_mpi_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_efficiency_mpi_" + comm_type + plot_filetype, dpi=dpi)
 
 
 
@@ -145,7 +159,7 @@ for i in range(0,len(data)-headerlen):
 for comm_type in ['p2p', 'rma']:
 
     # scaling
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -164,16 +178,17 @@ for comm_type in ['p2p', 'rma']:
             plt.plot(x_axis_points[0:len(scaling_values)], scaling_values, marker=plot_marker, label=key)
 
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(scaling_values)])
     plt.ylabel('Iteration time [ms]')
-    plt.yscale('log')
-    plt.xscale('log')
+    plt.yscale('log', base=2)
+    plt.xscale('log', base=2)
     plt.legend(prop={'size': legend_font_size})
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_scaling_hybrid_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_scaling_hybrid_" + comm_type + plot_filetype, dpi=dpi)
 
     # speedup
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -194,13 +209,14 @@ for comm_type in ['p2p', 'rma']:
 
     plt.legend(prop={'size': legend_font_size})
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(speedup_values)])
     plt.ylabel('Speedup')
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_speedup_hybrid_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_speedup_hybrid_" + comm_type + plot_filetype, dpi=dpi)
 
     # efficiency
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -224,11 +240,12 @@ for comm_type in ['p2p', 'rma']:
 
             
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(efficiency_values)])
     plt.ylabel('Efficiency [%]')
     plt.legend(prop={'size': legend_font_size})
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_efficiency_hybrid_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_efficiency_hybrid_" + comm_type + plot_filetype, dpi=dpi)
 
 
 x_axis_points = [1, 2*9, 4*9, 8*9, 16*9, 32*9]
@@ -255,7 +272,7 @@ for i in range(0,len(data)-headerlen):
 for comm_type in ['p2p', 'rma']:
 
     # scaling
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -274,16 +291,17 @@ for comm_type in ['p2p', 'rma']:
             plt.plot(x_axis_points[0:len(scaling_values)], scaling_values, marker=plot_marker, label=key)
 
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(scaling_values)])
     plt.ylabel('Iteration time [ms]')
-    plt.yscale('log')
-    plt.xscale('log')
+    plt.yscale('log', base=2)
+    plt.xscale('log', base=2)
     plt.legend(prop={'size': legend_font_size})
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_scaling_hybrid_1D_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_scaling_hybrid_1D_" + comm_type + plot_filetype, dpi=dpi)
 
     # speedup
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -304,13 +322,14 @@ for comm_type in ['p2p', 'rma']:
 
     plt.legend(prop={'size': legend_font_size})
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(speedup_values)])
     plt.ylabel('Speedup')
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_speedup_hybrid_1D_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_speedup_hybrid_1D_" + comm_type + plot_filetype, dpi=dpi)
 
     # efficiency
-    plt.figure(figsize=[ploth_width, ploth_height])
+    plt.figure(figsize=[plot_width, plot_height])
     for key, data_series in data_dict.items():
         plot_marker = ""
         if key.find('256')  != -1:
@@ -334,8 +353,9 @@ for comm_type in ['p2p', 'rma']:
 
             
     plt.xlabel('Number of cores')
+    plt.xticks(x_axis_points[0:len(efficiency_values)])
     plt.ylabel('Efficiency [%]')
     plt.legend(prop={'size': legend_font_size})
     plt.grid(True)
-    plt.gca().set_position([0, 0, 1, 1])
-    plt.savefig("ppp_efficiency_hybrid_1D_" + comm_type + ".svg")
+    plt.tight_layout()
+    plt.savefig("ppp_efficiency_hybrid_1D_" + comm_type + plot_filetype, dpi=dpi)

@@ -24,7 +24,7 @@
 #include "Hdf5Handle.hpp"
 #include "HeatSolverBase.hpp"
 
-#define DATA_TYPE_EXCHANGE (1)  // 1 - use MPI datatypes for halo exchange (UNSAFE), 0 - use raw data for halo exchange
+#define DATA_TYPE_EXCHANGE (0)  // 1 - use MPI datatypes for halo exchange (UNSAFE), 0 - use raw data for halo exchange
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 /**
