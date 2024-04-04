@@ -12,3 +12,9 @@ This file contains the origins of data in each file in this directory selected f
 ### `weak_scaling.csv`
 * rows 5, 41, 77, 113 and 149 from `../results_with_fs_raw/run_full_mpi_2d_out.csv`,
 * rows 5, 41, 77, 113 and 149 from `../results_with_fs_raw/run_full_hybrid_1d_out.csv`,
+
+### `fs_settings.csv`
+* rows 7, 37, 67, 97 and 127 from `../results_with_fs_raw/run_full_mpi_2d_out.csv`,
+* rows 7, 37, 67, 97 and 127 from `../results_with_fs_data_type/run_full_mpi_2d_out.csv`,
+* rows 7, 37, 67, 97 and 127 from `../results_no_fs_raw/run_full_mpi_2d_out.csv`,
+* rows 7, 37, 67, 97 and 127 from `../results_no_fs_data_type/run_full_mpi_2d_out.csv`
