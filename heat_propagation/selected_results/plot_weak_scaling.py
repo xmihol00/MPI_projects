@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
 
-SMALL_SIZE = 13
+SMALL_SIZE = 12.5
 LARGE_SIZE = 15
 
 matplotlib.rc('font', size=SMALL_SIZE)        
@@ -15,11 +15,11 @@ matplotlib.rc('legend', fontsize=SMALL_SIZE)
 matplotlib.rc('figure', titlesize=LARGE_SIZE) 
 
 df = pd.read_csv("weak_scaling.csv", sep=";")
-df = df[["file_id", "mpi_procs", "omp_threads", "iteration_time"]]
+df = df[["decomposition", "mpi_procs", "omp_threads", "iteration_time"]]
 df["mpi_procs"] *= df["omp_threads"]
-df_mpi_2d = df[df["file_id"] == "mpi_2d"].copy()
+df_mpi_2d = df[df["decomposition"] == "2D"]
 df_mpi_2d.reset_index(drop=True, inplace=True)
-df_hybrid_1d = df[df["file_id"] == "hybrid_1d"].copy()
+df_hybrid_1d = df[df["decomposition"] == "1D"]
 df_hybrid_1d.reset_index(drop=True, inplace=True)
 
 all_processors = df["mpi_procs"].unique()
@@ -48,9 +48,9 @@ ideal_times = np.ones_like(all_processors)
 
 plt.figure(figsize=(6, 6))
 plt.title("Weak scaling", {"fontsize": LARGE_SIZE})
-plt.plot(df_mpi_2d["mpi_procs"], df_mpi_2d["iteration_time"], label="MPI 2D RMA", marker="D", markersize=10)
-plt.plot(df_hybrid_1d["mpi_procs"], df_hybrid_1d["iteration_time"], label="Hybrid 1D RMA", marker="s", markersize=10)
 plt.plot(all_processors, ideal_times, label="Perfect scaling", linestyle="--", marker="o", markersize=10)
+plt.plot(df_hybrid_1d["mpi_procs"], df_hybrid_1d["iteration_time"], label="Hybrid 1D RMA", marker="s", markersize=10)
+plt.plot(df_mpi_2d["mpi_procs"], df_mpi_2d["iteration_time"], label="MPI 2D RMA", marker="D", markersize=10)
 plt.xlabel("Number of processors")
 plt.xscale("log", base=2)
 plt.ylim(1 / 2**4.2, 2**4.2)

@@ -2,8 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
 import numpy as np
+import matplotlib.colors as mcolors
 
-SMALL_SIZE = 13
+SMALL_SIZE = 12.5
 LARGE_SIZE = 15
 
 matplotlib.rc('font', size=SMALL_SIZE)        
@@ -15,24 +16,24 @@ matplotlib.rc('legend', fontsize=SMALL_SIZE)
 matplotlib.rc('figure', titlesize=LARGE_SIZE) 
 
 df = pd.read_csv("strong_scaling.csv", sep=";")
-df = df[["mpi_procs", "domain_size", "iteration_time"]]
-df_256_domain = df[df["domain_size"] == 256].copy()
-df_256_domain.reset_index(drop=True, inplace=True)
-df_4096_domain = df[df["domain_size"] == 4096].copy()
-df_4096_domain.reset_index(drop=True, inplace=True)
-
-df_256_domain.loc[:, "iteration_time"] /= df_256_domain.loc[0, "iteration_time"]
-df_4096_domain.loc[:, "iteration_time"] /= df_4096_domain.loc[0, "iteration_time"]
-
-processors = df_256_domain["mpi_procs"].to_numpy()
-ideal_times = np.ones_like(processors)
-ideal_times = ideal_times / processors
+df.loc[:, "mpi_procs"] *= df.loc[:, "omp_threads"]
 
 plt.figure(figsize=(6, 6))
 plt.title("Strong scaling", {"fontsize": LARGE_SIZE})
-plt.plot(processors, df_256_domain["iteration_time"], label="MPI 2D 256x256 RMA", marker="D", markersize=10)
-plt.plot(processors, df_4096_domain["iteration_time"], label="MPI 2D 4096x4096 RMA", marker="s", markersize=10)
+
+processors = df["mpi_procs"].unique()
+ideal_times = np.ones_like(processors)
+ideal_times = ideal_times / processors
 plt.plot(processors, ideal_times, label="Perfect scaling", linestyle="--", marker="o", markersize=10)
+
+for decomposition, launch_type, color, marker in zip(["1D", "2D"], ["Hybrid", "MPI"], list(mcolors.TABLEAU_COLORS.keys())[1:], ["s", "D"]):
+    df_decomposition = df[df["decomposition"] == decomposition]
+    for domain_size, marker_fill in zip([256, 4096], ["none", "full"]):
+        df_domain = df_decomposition[df_decomposition["domain_size"] == domain_size]
+        df_domain.reset_index(drop=True, inplace=True)
+        df_domain.loc[:, "iteration_time"] /= df_domain.loc[0, "iteration_time"]
+        plt.plot(df_domain["mpi_procs"], df_domain["iteration_time"], label=f"{launch_type} {decomposition} {domain_size}x{domain_size} RMA", marker=marker, markersize=10, color=color, fillstyle=marker_fill)
+
 plt.xlabel("Number of processors")
 plt.xscale("log", base=2)
 plt.ylabel("Normalized iteration time")
