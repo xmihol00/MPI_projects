@@ -15,32 +15,24 @@ matplotlib.rc('ytick', labelsize=SMALL_SIZE)
 matplotlib.rc('legend', fontsize=SMALL_SIZE)  
 matplotlib.rc('figure', titlesize=LARGE_SIZE) 
 
-df = pd.read_csv("fs_settings.csv", sep=";")
-df.loc[:, "mpi_procs"] *= df.loc[:, "omp_threads"]
-min_iter_time = df["iteration_time"].max()
+fig, ax = plt.subplots(figsize=(12, 6))
+for i, filename, alignment in zip([0, 1], ["fs_comparison", "fs_comparison_aligned"], ["unaligned", "aligned 4 KB"]):
+    df = pd.read_csv(f"{filename}.csv", sep=";")
+    df.loc[:, "mpi_procs"] *= df.loc[:, "omp_threads"]
+    fs_settings = df["stripe"].unique()
 
-plt.figure(figsize=(6, 6))
-plt.title("FS settings strong scaling", {"fontsize": LARGE_SIZE})
+    for output_type, color, marker in zip(["seq", "par"], list(mcolors.TABLEAU_COLORS.keys())[i::2], ["s", "D"]):
+        df_output = df[df["output_type"] == output_type]
+        for domain_size, marker_fill in zip([4096, 2048, 1024], ["full", "bottom", "top"]):
+            df_domain = df_output[df_output["domain_size"] == domain_size].copy()
+            df_domain.reset_index(drop=True, inplace=True)
+            df_domain.loc[:, "iteration_time"] /= df_domain["iteration_time"].min()
+            plt.plot(df_domain["iteration_time"], label=f"{domain_size}x{domain_size} {df_domain['mpi_procs'][0]}P {output_type} I/O {alignment if output_type == 'par' else ''}", marker=marker, markersize=8, color=color, fillstyle=marker_fill, alpha=0.75)
 
-processors = df["mpi_procs"].unique()
-ideal_times = np.ones_like(processors)
-ideal_times = ideal_times / processors
-plt.plot(processors, ideal_times, label="Perfect scaling", linestyle="--", marker="o", markersize=10)
-
-for fs, fs_name, color, marker in zip([1, 0], ["FS -S 1M -c 16", "FS default"], list(mcolors.TABLEAU_COLORS.keys())[1:], ["s", "D"]):
-    df_fs = df[df["fs"] == fs]
-    for run, marker_fill in zip([0, 1], ["none", "full"]):
-        df_run = df_fs[df_fs["run"] == run]
-        df_run.reset_index(drop=True, inplace=True)
-        df_run.loc[:, "iteration_time"] /= min_iter_time
-        plt.plot(df_run["mpi_procs"], df_run["iteration_time"], label=f"MPI 2D 4096x4096 RMA {fs_name} run {run + 1}", marker=marker, markersize=10, color=color, fillstyle=marker_fill)
-
-plt.xlabel("Number of processors")
-plt.xscale("log", base=2)
-plt.ylabel("Normalized iteration time")
-plt.yscale("log", base=2)
-plt.legend()
+ax.set_xlabel("Stripe size")
+ax.set_ylabel("Normalized iteration time")
+ax.set_xticks(np.arange(0, len(fs_settings), 1), fs_settings)
+ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=1, fancybox=True, prop={'size': 10})
 plt.grid()
-plt.gca().set_aspect("equal", adjustable="box")
 plt.tight_layout()
-plt.savefig("fs_settings.png", dpi=500)
+plt.savefig(f"fs_comparison.png", dpi=500)

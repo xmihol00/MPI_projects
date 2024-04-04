@@ -17,6 +17,7 @@
 #include <ios>
 #include <string_view>
 #include <iostream>
+#include <string>
 
 #include "ParallelHeatSolver.hpp"
 
@@ -51,21 +52,12 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
     _sizes.northSouthHalo = 2 * _sizes.localWidth;
     _sizes.westEastHalo = 2 * _sizes.localHeight;
 
-    /**********************************************************************************************************************/
-    /*                                  Call init* and alloc* methods in correct order                                    */
-    /**********************************************************************************************************************/
-
     allocLocalTiles();
     initGridTopology();
     initDataTypes();
 
     if (!mSimulationProps.getOutputFileName().empty())
     {
-        /**********************************************************************************************************************/
-        /*                               Open output file if output file name was specified.                                  */
-        /*  If mSimulationProps.useParallelIO() flag is set to true, open output file for parallel access, otherwise open it  */
-        /*                         only on MASTER rank using sequetial IO. Use openOutputFile* methods.                       */
-        /**********************************************************************************************************************/
         if (mSimulationProps.useParallelIO())
         {
             openOutputFileParallel();
@@ -82,11 +74,6 @@ ParallelHeatSolver::ParallelHeatSolver(const SimulationProperties &simulationPro
 
 ParallelHeatSolver::~ParallelHeatSolver()
 {
-    /**********************************************************************************************************************/
-    /*                                  Call deinit* and dealloc* methods in correct order                                */
-    /*                                             (should be in reverse order)                                           */
-    /**********************************************************************************************************************/
-
     deinitDataTypes();
     deinitGridTopology();
 }
@@ -1291,18 +1278,25 @@ void ParallelHeatSolver::storeDataIntoFileSequential(size_t iteration, const flo
 void ParallelHeatSolver::openOutputFileParallel()
 {
 #ifdef H5_HAVE_PARALLEL
-    Hdf5PropertyListHandle faplHandle(H5Pcreate(H5P_FILE_ACCESS));
-    H5Pset_fapl_mpio(faplHandle, _topologyComm, MPI_INFO_NULL);
+    MPI_Info fileSystemInfo;
+    MPI_Info_create(&fileSystemInfo);
+    MPI_Info_set(fileSystemInfo, "striping_factor", "1"); // number of I/O operations per process
+    string strippingUnit = to_string(_sizes.localHeight * _sizes.localWidth * sizeof(float));
+    MPI_Info_set(fileSystemInfo, "striping_unit", strippingUnit.c_str()); // size of the stripe in bytes
 
+    Hdf5PropertyListHandle faplHandle(H5Pcreate(H5P_FILE_ACCESS));
+    H5Pset_fapl_mpio(faplHandle, _topologyComm, fileSystemInfo);
+    H5Pset_alignment(faplHandle, 1, 1 << 12); // set the alignment to 4 KB
+
+ 
     /**********************************************************************************************************************/
     /*                          Open output HDF5 file for parallel access with alignment.                                 */
     /*      Set up faplHandle to use MPI-IO and alignment. The handle will automatically release the resource.            */
     /**********************************************************************************************************************/
 
-    mFileHandle = H5Fcreate(mSimulationProps.getOutputFileName(codeType).c_str(),
-                            H5F_ACC_TRUNC,
-                            H5P_DEFAULT,
-                            faplHandle);
+    mFileHandle = H5Fcreate(mSimulationProps.getOutputFileName(codeType).c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, faplHandle);
+    MPI_Info_free(&fileSystemInfo);
+
     if (!mFileHandle.valid())
     {
         throw ios::failure("Cannot create output file!");
