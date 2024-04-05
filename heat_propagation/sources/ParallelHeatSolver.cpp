@@ -22,7 +22,7 @@
 #include "ParallelHeatSolver.hpp"
 
 using namespace std;
-#if MEASURE_COMMUNICATION_DELAY || MEASURE_HALO_ZONE_COMPUTATION_DELAY
+#if MEASURE_HALO_ZONE_COMPUTATION_TIME
     using namespace std::chrono;
 #endif
 
@@ -1004,10 +1004,6 @@ void ParallelHeatSolver::startHaloExchangeRMA_DataType(bool next)
 
 void ParallelHeatSolver::awaitHaloExchangeP2P_Raw()
 {
-    #if MEASURE_COMMUNICATION_DELAY
-        auto start = high_resolution_clock::now();
-    #endif
-
     MPI_Status status = {0, 0, 0, 0, 0};
     MPI_Wait(&_haloExchangeRequest, &status);
     if (status.MPI_ERROR != MPI_SUCCESS) // abort in case of a failure
@@ -1015,11 +1011,6 @@ void ParallelHeatSolver::awaitHaloExchangeP2P_Raw()
         cerr << "Rank: " << _worldRank << " - Error in halo exchange: " << status.MPI_ERROR << endl;
         MPI_Abort(MPI_COMM_WORLD, status.MPI_ERROR);
     }
-
-    #if MEASURE_COMMUNICATION_DELAY
-        auto end = high_resolution_clock::now();
-        _communicationDelay += duration_cast<nanoseconds>(end - start).count();
-    #endif
 }
 
 void ParallelHeatSolver::awaitHaloExchangeP2P_DataType(bool next)
@@ -1030,30 +1021,12 @@ void ParallelHeatSolver::awaitHaloExchangeP2P_DataType(bool next)
 
 void ParallelHeatSolver::awaitHaloExchangeRMA_Raw()
 {
-    #if MEASURE_COMMUNICATION_DELAY
-        auto start = high_resolution_clock::now();
-    #endif
-
     MPI_Win_fence(0, _haloExchangeWindows[0]); // synchronize the access to the window (wait for the completion of the put operations)
-
-    #if MEASURE_COMMUNICATION_DELAY
-        auto end = high_resolution_clock::now();
-        _communicationDelay += duration_cast<nanoseconds>(end - start).count();
-    #endif
 }
 
 void ParallelHeatSolver::awaitHaloExchangeRMA_DataType(bool next)
 {
-    #if MEASURE_COMMUNICATION_DELAY
-        auto start = high_resolution_clock::now();
-    #endif
-
     MPI_Win_fence(0, _haloExchangeWindows[next]); // synchronize the access to the window (wait for the completion of the put operations)
-
-    #if MEASURE_COMMUNICATION_DELAY
-        auto end = high_resolution_clock::now();
-        _communicationDelay += duration_cast<nanoseconds>(end - start).count();
-    #endif
 }
 
 void ParallelHeatSolver::scatterInitialData_Raw()
@@ -1254,12 +1227,12 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         const bool current = iter & 1;
         const bool next = !current;
 
-        #if MEASURE_HALO_ZONE_COMPUTATION_DELAY && !MEASURE_COMMUNICATION_DELAY
+        #if MEASURE_HALO_ZONE_COMPUTATION_TIME
             auto start = high_resolution_clock::now();
         #endif
         // compute temperature halo zones (and the two most outer rows and columns of the tile)
         computeTempHaloZones_Raw(current, next);
-        #if MEASURE_HALO_ZONE_COMPUTATION_DELAY && !MEASURE_COMMUNICATION_DELAY
+        #if MEASURE_HALO_ZONE_COMPUTATION_TIME
             auto end = high_resolution_clock::now();
             _haloZoneComputationDelay += duration_cast<nanoseconds>(end - start).count();
         #endif
@@ -1303,17 +1276,7 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
     // compute the final average temperature and print the final report
     computeAndPrintMidColAverageSequential(elapsedTime, outResult);
 
-    #if MEASURE_COMMUNICATION_DELAY
-        size_t localAverage = _communicationDelay / mSimulationProps.getNumIterations();
-        size_t globalAverage = 0;
-        MPI_Reduce(&localAverage, &globalAverage, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
-        if (_worldRank == 0)
-        {
-            cout << ";" << globalAverage / _worldSize << endl;
-        }
-    #endif
-
-    #if MEASURE_HALO_ZONE_COMPUTATION_DELAY && !MEASURE_COMMUNICATION_DELAY
+    #if MEASURE_HALO_ZONE_COMPUTATION_TIME
         size_t localAverage = _haloZoneComputationDelay / mSimulationProps.getNumIterations();
         size_t globalAverage = 0;
         MPI_Reduce(&localAverage, &globalAverage, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
