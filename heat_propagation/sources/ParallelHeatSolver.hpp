@@ -17,7 +17,7 @@
 #include <cstddef>
 #include <string_view>
 #include <vector>
-
+#include <chrono>
 #include <mpi.h>
 
 #include "AlignedAllocator.hpp"
@@ -26,6 +26,9 @@
 
 #define DATA_TYPE_EXCHANGE (0)  // 1 - use MPI datatypes for halo exchange (UNSAFE), 0 - use raw data for halo exchange
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
+
+#define MEASURE_COMMUNICATION_DELAY (0) // 1 - measure communication delay, 0 - do not measure communication delay
+#define MEASURE_HALO_ZONE_COMPUTATION_DELAY (1) // 1 - measure halo zone computation delay, 0 - do not measure halo zone computation delay
 
 /**
  * @brief The ParallelHeatSolver class implements parallel MPI based heat
@@ -310,6 +313,14 @@ private:
     MPI_Aint _displacements_DataType[4] = {0, 0, 0, 0};
     std::vector<int> _scatterGatherCounts;
     std::vector<int> _scatterGatherDisplacements;
+
+    #if MEASURE_COMMUNICATION_DELAY
+        size_t _communicationDelay = 0;
+    #endif
+
+    #if MEASURE_HALO_ZONE_COMPUTATION_DELAY
+        size_t _haloZoneComputationDelay = 0;
+    #endif
 };
 
 inline constexpr bool ParallelHeatSolver::isNotTopRow()
