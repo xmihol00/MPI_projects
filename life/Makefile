@@ -3,7 +3,7 @@ CURRENT_DIR = $(shell pwd)
 PROJECT_DIR = $(MAKEFILE_DIR:$(CURRENT_DIR)/%=%)
 
 CC = mpic++
-CFLAGS = -Wall -Wextra -std=c++17 -O3 -Wno-cast-function-type
+CFLAGS = -Wall -Wextra -std=c++20 -O3 -Wno-cast-function-type
 CPP_SRC = $(wildcard $(PROJECT_DIR)/*.cpp)
 
 .PHONY: all run clean
