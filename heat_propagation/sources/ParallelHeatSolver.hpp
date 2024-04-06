@@ -27,7 +27,7 @@
 #define DATA_TYPE_EXCHANGE (0)  // 1 - use MPI datatypes for halo exchange (UNSAFE), 0 - use raw data for halo exchange
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
-#define MEASURE_HALO_ZONE_COMPUTATION_TIME (1) // 1 - measure halo zone computation time, 0 - do not measure halo zone computation time
+#define MEASURE_HALO_ZONE_COMPUTATION_TIME (0) // 1 - measure halo zone computation time, 0 - do not measure halo zone computation time
 
 /**
  * @brief The ParallelHeatSolver class implements parallel MPI based heat

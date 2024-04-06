@@ -27,10 +27,11 @@ for i, filename, alignment in zip([0, 1], ["fs_comparison", "fs_comparison_align
             df_domain = df_output[df_output["domain_size"] == domain_size].copy()
             df_domain.reset_index(drop=True, inplace=True)
             df_domain.loc[:, "iteration_time"] /= df_domain["iteration_time"].min()
-            plt.plot(df_domain["iteration_time"], label=f"{domain_size}x{domain_size} {df_domain['mpi_procs'][0]}P {output_type} I/O {alignment if output_type == 'par' else ''}", marker=marker, markersize=8, color=color, fillstyle=marker_fill, alpha=0.75)
+            plt.plot(df_domain["iteration_time"], label=f"{domain_size}x{domain_size} {df_domain['mpi_procs'][0]}P {output_type} I/O {alignment if output_type == 'par' else ''}", marker=marker, markersize=8, color=color, fillstyle=marker_fill, alpha=0.75, linestyle="--")
 
 ax.set_xlabel("Stripe size")
 ax.set_ylabel("Normalized iteration time")
+ax.set_yscale("log", base=2)
 ax.set_xticks(np.arange(0, len(fs_settings), 1), fs_settings)
 ax.legend(loc="center left", bbox_to_anchor=(1, 0.5), ncol=1, fancybox=True, prop={'size': 10})
 plt.grid()

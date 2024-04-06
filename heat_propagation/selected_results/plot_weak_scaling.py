@@ -17,9 +17,9 @@ matplotlib.rc('figure', titlesize=LARGE_SIZE)
 df = pd.read_csv("weak_scaling.csv", sep=";")
 df = df[["decomposition", "mpi_procs", "omp_threads", "iteration_time"]]
 df["mpi_procs"] *= df["omp_threads"]
-df_mpi_2d = df[df["decomposition"] == "2D"]
+df_mpi_2d = df[df["decomposition"] == "2D"].copy()
 df_mpi_2d.reset_index(drop=True, inplace=True)
-df_hybrid_1d = df[df["decomposition"] == "1D"]
+df_hybrid_1d = df[df["decomposition"] == "1D"].copy()
 df_hybrid_1d.reset_index(drop=True, inplace=True)
 
 all_processors = df["mpi_procs"].unique()
@@ -48,10 +48,10 @@ ideal_times = np.ones_like(all_processors)
 
 plt.figure(figsize=(6, 6))
 plt.title("Weak scaling", {"fontsize": LARGE_SIZE})
-plt.plot(all_processors, ideal_times, label="Perfect scaling", linestyle="--", marker="o", markersize=8)
-plt.plot(df_hybrid_1d["mpi_procs"], df_hybrid_1d["iteration_time"], label="Hybrid 1D RMA", marker="s", markersize=8)
-plt.plot(df_mpi_2d["mpi_procs"], df_mpi_2d["iteration_time"], label="MPI 2D RMA", marker="D", markersize=8)
-plt.xlabel("Number of processors")
+plt.plot(all_processors, ideal_times, label="Perfect scaling")
+plt.plot(df_hybrid_1d["mpi_procs"], df_hybrid_1d["iteration_time"], label="Hybrid 1D RMA", marker="s", markersize=8, linestyle="--")
+plt.plot(df_mpi_2d["mpi_procs"], df_mpi_2d["iteration_time"], label="MPI 2D RMA", marker="D", markersize=8, linestyle="--")
+plt.xlabel("Number of processes")
 plt.xscale("log", base=2)
 plt.ylim(1 / 2**4.2, 2**4.2)
 plt.ylabel("Normalized iteration time")

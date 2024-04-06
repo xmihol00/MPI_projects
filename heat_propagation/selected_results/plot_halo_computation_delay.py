@@ -35,7 +35,7 @@ for df, launch_type, color in zip(dfs, ["1D hybrid", "2D MPI"], list(mcolors.TAB
         df_mode.loc[:, "halo_delay"] /= min
         ax.plot(df_mode["mpi_procs"], df_mode["halo_delay"], label=f"{launch_type} P2P {domain_size}x{domain_size}", marker=marker, markersize=7, color=color, linestyle="--")
 
-ax.set_xlabel("Number of processors")
+ax.set_xlabel("Number of processes")
 ax.set_xscale("log", base=2)
 ax.set_ylabel("Normalized halo computation time")
 ax.set_yscale("log", base=2)

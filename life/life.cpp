@@ -153,9 +153,8 @@ LifeSimulation::initializeGridTopology()
         MPI_Comm_split(MPI_COMM_WORLD, color, _worldRank, &_subWorldComm);
     }
 
-    _sizes.nodesEdgeCount = msbPosition >> 1;
-    int dimensions = 1 << _sizes.nodesEdgeCount;
-    MPI_Cart_create(_subWorldComm, 2, {dimensions, dimensions}, {0, 0}, 0, &_gridComm);
+    _sizes.nodesEdgeCount = 1 << (msbPosition >> 1);
+    MPI_Cart_create(_subWorldComm, 2, {_sizes.nodesEdgeCount, _sizes.nodesEdgeCount}, {0, 0}, 0, &_gridComm);
 }
 
 LifeSimulation::readInputFile()
