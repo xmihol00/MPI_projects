@@ -672,7 +672,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // north halo zone
     if (isNotTopRow()) // node is not in the top row
     {
-        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++) // adjust offset for nodes in the left and right columns
+        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++) // adjust offset to not compute undefined corners
         {
             tempNextTopRow2[i] = computePoint(
                 tempCurrentTopRow0[i], tempCurrentTopRow1[i], tempCurrentTopRow3[i], tempCurrentTopRow4[i],
@@ -792,7 +792,7 @@ void ParallelHeatSolver::computeTempHaloZones_DataType(bool current, bool next)
     // south halo zone
     if (isNotBottomRow())
     {
-        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++) // adjust offset for nodes in the left and right columns
+        for (int i = isNotLeftColumn() ? 2 : 4; i < _sizes.localWidthWithHalos - (isNotRightColumn() ? 2 : 4); i++) // adjust offset to not compute undefined corners
         {
             tempNextBotRow2[i] = computePoint(
                 tempCurrentBotRow4[i], tempCurrentBotRow3[i], tempCurrentBotRow1[i], tempCurrentBotRow0[i],

@@ -14,6 +14,7 @@
 #include <array>
 
 using namespace std;
+using cell_t = uint8_t;
 
 #if 1
     #define INFO_PRINT_RANK0(rank, message) if (rank == 0) { cerr << "Info: " << message << endl; }
@@ -40,13 +41,26 @@ private:
     void constructGridTiles();
     void destructGridTiles();
 
-    void performInitialDataExchange();
+    void exchangeInitialData();
     void startCornersExchange(int sourceTile, int destinationTile);
     void awaitCornersExchange();
-    void startHaloZonesExchange();
+    void startHaloZonesExchange(int sourceTile, int destinationTile);
     void awaitHaloZonesExchange();
-    void computeHaloZones();
-    void computeTile();
+    void computeHaloZones(int sourceTile, int destinationTile);
+    void computeTile(int sourceTile, int destinationTile);
+    void collectResults(int sourceTile);
+
+    #pragma omp declare simd
+    inline constexpr cell_t updateCell
+    (
+        cell_t leftUpperCorner, cell_t upper, cell_t rightUpperCorner, 
+        cell_t left, cell_t center, cell_t right, 
+        cell_t leftLowerCorner, cell_t lower, cell_t rightLowerCorner
+    )
+    {
+        int sum = leftUpperCorner + upper + rightUpperCorner + left + right + leftLowerCorner + lower + rightLowerCorner;
+        return (center & ((sum == 2) | (sum == 3))) | (!center & (sum == 3));
+    }
 
     void printTilesWithHaloZones(int tile);
     void printGlobalTile();
@@ -74,8 +88,8 @@ private:
     {
         int globalHeight;
         int globalWidth;
-        int globalPaddedHeight;
-        int globalPaddedWidth;
+        int globalNotPaddedHeight;
+        int globalNotPaddedWidth;
         int localHeight;
         int localWidth;
         int localHeightWithHaloZones;
@@ -97,6 +111,8 @@ private:
     vector<int> _scatterGatherCounts;
     vector<int> _scatterGatherDisplacements;
 
+    MPI_Request _haloZoneRequest;
+
     int _neighbors[4];
     int _cornerNeighbors[4];
     MPI_Request _cornerSendRequests[4];
@@ -104,8 +120,8 @@ private:
     int _neighbourCounts[4] = {1, 1, 1, 1};
     MPI_Aint _neighbourDisplacements[4] = {0, 0, 0, 0};
 
-    uint8_t *_globalTile = nullptr;
-    uint8_t *_tiles[2] = {nullptr, nullptr}; // two tiles for ping-pong computation
+    cell_t *_globalTile = nullptr;
+    cell_t *_tiles[2] = {nullptr, nullptr}; // two tiles for ping-pong computation
 
     inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
 
@@ -312,39 +328,42 @@ void LifeSimulation::readInputFile()
 
         string row;
         getline(inputFile, row);
-        _settings.globalWidth = row.length();
-        _settings.globalHeight = (fileSize + 1) / (_settings.globalWidth + 1); // +1 for the newline character
-        if (_settings.globalHeight * (_settings.globalWidth + 1) != fileSize && _settings.globalHeight * (_settings.globalWidth + 1) - 1 != fileSize)
+        _settings.globalNotPaddedWidth = row.length();
+        _settings.globalNotPaddedHeight = (fileSize + 1) / (_settings.globalNotPaddedWidth + 1); // +1 for the newline character
+        if (_settings.globalNotPaddedHeight * (_settings.globalNotPaddedWidth + 1) != fileSize && 
+            _settings.globalNotPaddedHeight * (_settings.globalNotPaddedWidth + 1) - 1 != fileSize)
         {
             cerr << "Error: The input file must contain a rectangular grid of '1' and '0' characters." << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        _settings.globalPaddedWidth = ((_settings.globalWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.padding) / _settings.nodesWidthCount) * _settings.nodesWidthCount;
-        _settings.globalPaddedHeight = ((_settings.globalHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.padding) / _settings.nodesHeightCount) * _settings.nodesHeightCount;
-        _settings.localWidth = _settings.globalPaddedWidth / _settings.nodesWidthCount;
-        _settings.localHeight = _settings.globalPaddedHeight / _settings.nodesHeightCount;
+        _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.padding) / 
+                                         _settings.nodesWidthCount) * _settings.nodesWidthCount;
+        _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.padding) / 
+                                 _settings.nodesHeightCount) * _settings.nodesHeightCount;
+        _settings.localWidth = _settings.globalWidth / _settings.nodesWidthCount;
+        _settings.localHeight = _settings.globalHeight / _settings.nodesHeightCount;
         _settings.localWidthWithHaloZones = _settings.localWidth + 2;
         _settings.localHeightWithHaloZones = _settings.localHeight + 2;
         _settings.localTileSize = _settings.localHeight * _settings.localWidth;
         _settings.localTileSizeWithHaloZones = _settings.localHeightWithHaloZones * _settings.localWidthWithHaloZones;
-        int rowPadding = (_settings.globalPaddedWidth - _settings.globalWidth) >> 1;
-        int colPadding = (_settings.globalPaddedHeight - _settings.globalHeight) >> 1;
+        int rowPadding = (_settings.globalWidth - _settings.globalNotPaddedWidth) >> 1;
+        int colPadding = (_settings.globalHeight - _settings.globalNotPaddedHeight) >> 1;
 
         int readLines = 0;
-        _globalTile = static_cast<uint8_t *>(aligned_alloc(64, _settings.globalPaddedHeight * _settings.globalPaddedWidth * sizeof(uint8_t)));
+        _globalTile = static_cast<cell_t *>(aligned_alloc(64, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t)));
         if (_globalTile == nullptr)
         {
             cerr << "Error: Unable to allocate memory for the global tile." << endl;
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        memset(_globalTile, 0, _settings.globalPaddedHeight * _settings.globalPaddedWidth * sizeof(uint8_t));
+        memset(_globalTile, 0, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t));
 
-        int idx = colPadding * _settings.globalPaddedWidth;
+        int idx = colPadding * _settings.globalWidth;
         do
         {
             idx += rowPadding;
-            if (row.length() != static_cast<size_t>(_settings.globalWidth))
+            if (row.length() != static_cast<size_t>(_settings.globalNotPaddedWidth))
             {
                 cerr << "Error: The input file must contain a rectangular grid of '1' and '0' characters." << endl;
                 MPI_Abort(MPI_COMM_WORLD, 1);
@@ -368,14 +387,14 @@ void LifeSimulation::readInputFile()
 
 void LifeSimulation::constructDataTypes()
 {
-    int outerTileSizes[2] = {_settings.globalPaddedHeight, _settings.globalPaddedWidth};
+    int outerTileSizes[2] = {_settings.globalHeight, _settings.globalWidth};
     int innerTileSizes[2] = {_settings.localHeight, _settings.localWidth};
     int starts[2] = {0, 0};
     
     // tile data type for scatter and gather data type
     MPI_Type_create_subarray(2, outerTileSizes, innerTileSizes, starts, MPI_ORDER_C, MPI_BYTE, &_tileWithoutHaloZones);
     MPI_Type_commit(&_tileWithoutHaloZones);
-    MPI_Type_create_resized(_tileWithoutHaloZones, 0, _settings.localWidth * sizeof(uint8_t), &_tileWithoutHaloZonesResized);
+    MPI_Type_create_resized(_tileWithoutHaloZones, 0, _settings.localWidth * sizeof(cell_t), &_tileWithoutHaloZonesResized);
     MPI_Type_commit(&_tileWithoutHaloZonesResized);
 
     // tile data type with halo zones
@@ -457,8 +476,8 @@ void LifeSimulation::destructDataTypes()
 
 void LifeSimulation::constructGridTiles()
 {
-    _tiles[0] = static_cast<uint8_t *>(aligned_alloc(64, _settings.localTileSizeWithHaloZones * sizeof(uint8_t)));
-    _tiles[1] = static_cast<uint8_t *>(aligned_alloc(64, _settings.localTileSizeWithHaloZones * sizeof(uint8_t)));
+    _tiles[0] = static_cast<cell_t *>(aligned_alloc(64, _settings.localTileSizeWithHaloZones * sizeof(cell_t)));
+    _tiles[1] = static_cast<cell_t *>(aligned_alloc(64, _settings.localTileSizeWithHaloZones * sizeof(cell_t)));
     if (_tiles[0] == nullptr || _tiles[1] == nullptr)
     {
         cerr << "Error: Unable to allocate memory for local tiles." << endl;
@@ -479,7 +498,7 @@ void LifeSimulation::destructGridTiles()
     }
 }
 
-void LifeSimulation::performInitialDataExchange()
+void LifeSimulation::exchangeInitialData()
 {
     // partition the global tile into local tiles and scatter them to all processes in the grid
     MPI_Scatterv(_globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _tileWithoutHaloZonesResized, 
@@ -556,6 +575,113 @@ void LifeSimulation::awaitCornersExchange()
     }
 }
 
+void LifeSimulation::startHaloZonesExchange(int sourceTile, int destinationTile)
+{
+    startCornersExchange(sourceTile, destinationTile);
+    MPI_Ineighbor_alltoallw(_tiles[sourceTile], _neighbourCounts, _neighbourDisplacements, _sendHaloZoneTypes, _tiles[destinationTile], 
+                            _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _gridCommunicator, &_haloZoneRequest);
+}
+
+void LifeSimulation::awaitHaloZonesExchange()
+{
+    awaitCornersExchange();
+    MPI_Wait(&_haloZoneRequest, MPI_STATUS_IGNORE);
+}
+
+void LifeSimulation::computeHaloZones(int sourceTile, int destinationTile)
+{
+    // unpack the source tile for easier access
+    cell_t *currentTile = _tiles[sourceTile];
+    cell_t *currentTopRow0 = currentTile; // closest to the top
+    cell_t *currentTopRow1 = currentTile + _settings.localWidthWithHaloZones;
+    cell_t *currentTopRow2 = currentTile + 2 * _settings.localWidthWithHaloZones;
+    cell_t *currentBottomRow0 = currentTile + _settings.localTileSizeWithHaloZones - 3 * _settings.localWidthWithHaloZones;
+    cell_t *currentBottomRow1 = currentTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones;
+    cell_t *currentBottomRow2 = currentTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones; // closest to the bottom
+
+    // unpack the destination tile for easier access
+    cell_t *nextTile = _tiles[destinationTile];
+    cell_t *nextTopRow1 = nextTile + _settings.localWidthWithHaloZones;
+    cell_t *nextBottomRow1 = nextTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones;
+
+    if (isNotTopRow()) // node is not in the top row
+    {
+        // compute the north halo zone
+        for (int i = !isNotLeftColumn() + 1; i < _settings.localWidthWithHaloZones - !isNotRightColumn() - 1; i++) // adjust offset to not compute undefined corners
+        {
+            nextTopRow1[i] = updateCell(currentTopRow0[i - 1], currentTopRow0[i], currentTopRow0[i + 1], 
+                                        currentTopRow1[i - 1], currentTopRow1[i], currentTopRow1[i + 1], 
+                                        currentTopRow2[i - 1], currentTopRow2[i], currentTopRow2[i + 1]);
+        }
+    }
+
+    if (isNotLeftColumn())
+    {
+        // compute the west halo zone
+        for (int i = 2; i < _settings.localHeightWithHaloZones - 2; i++) // adjust offset to not compute already computed values
+        {
+            int topIdx = (i - 1) * _settings.localWidthWithHaloZones;
+            int centerIdx = i * _settings.localWidthWithHaloZones;
+            int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones;
+            nextTile[centerIdx + 1] = updateCell(currentTile[topIdx], currentTile[topIdx + 1], currentTile[topIdx + 2],
+                                                 currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
+                                                 currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
+        }
+    }
+
+    if (isNotRightColumn())
+    {
+        // compute the east halo zone
+        for (int i = 3; i < _settings.localHeightWithHaloZones - 3; i++) // adjust offset to not compute already computed values
+        {
+            int topIdx = (i - 1) * _settings.localWidthWithHaloZones - 3;
+            int centerIdx = i * _settings.localWidthWithHaloZones - 3;
+            int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones - 3;
+            nextTile[centerIdx + 1] = updateCell(currentTile[topIdx], currentTile[topIdx + 1], currentTile[topIdx + 2],
+                                                 currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
+                                                 currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
+        }
+    }
+
+    if (isNotBottomRow())
+    {
+        // compute the south halo zone
+        for (int i = !isNotLeftColumn() + 1; i < _settings.localWidthWithHaloZones - !isNotRightColumn() - 1; i++) // adjust offset to not compute undefined corners
+        {
+            nextBottomRow1[i] = updateCell(currentBottomRow0[i - 1], currentBottomRow0[i], currentBottomRow0[i + 1], 
+                                           currentBottomRow1[i - 1], currentBottomRow1[i], currentBottomRow1[i + 1], 
+                                           currentBottomRow2[i - 1], currentBottomRow2[i], currentBottomRow2[i + 1]);
+        }
+    }
+}
+
+void LifeSimulation::computeTile(int sourceTile, int destinationTile)
+{
+    cell_t *currentTile = _tiles[sourceTile];
+    cell_t *nextTile = _tiles[destinationTile];
+
+    for (int i = 2; i < _settings.localHeightWithHaloZones - 2; i++)
+    {
+        int topIdx = (i - 1) * _settings.localWidthWithHaloZones;
+        int centerIdx = i * _settings.localWidthWithHaloZones;
+        int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones;
+
+        for (int j = 2; j < _settings.localWidthWithHaloZones - 2; j++)
+        {
+            nextTile[centerIdx + j] = updateCell(currentTile[topIdx + j - 1], currentTile[topIdx + j], currentTile[topIdx + j + 1],
+                                                 currentTile[centerIdx + j - 1], currentTile[centerIdx + j], currentTile[centerIdx + j + 1],
+                                                 currentTile[bottomIdx + j - 1], currentTile[bottomIdx + j], currentTile[bottomIdx + j + 1]);
+        }
+    }
+}
+
+void LifeSimulation::collectResults(int sourceTile)
+{
+    // gather the local tiles into the global tile
+    MPI_Gatherv(_tiles[sourceTile], 1, _tileWithoutHaloZones, _globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), 
+                _tileWithoutHaloZonesResized, 0, _gridCommunicator);
+}
+
 void LifeSimulation::printTilesWithHaloZones(int tile)
 {
     for (int node = 0; node < _gridSize; node++)
@@ -588,18 +714,49 @@ void LifeSimulation::printTilesWithHaloZones(int tile)
 
 void LifeSimulation::printGlobalTile()
 {
+    // TODO: solve nodesWidthCount >= 10 and nodesHeightCount >= 10
     if (_worldRank == 0)
     {
-        cerr << "Global tile:\n";
-        for (int i = 0; i < _settings.globalPaddedHeight; i++)
+        cout << " ";
+        for (int i = 0; i < _settings.nodesWidthCount; i++)
         {
-            for (int j = 0; j < _settings.globalPaddedWidth; j++)
+            cout << "|";
+            for (int j = 0; j < _settings.localWidth; j++)
             {
-                cerr << static_cast<int>(_globalTile[i * _settings.globalPaddedWidth + j]);
+                cout << i;
             }
-            cerr << "\n";
         }
-        cerr << endl;
+        cout << "|\n";
+
+
+        for (int i = 0; i < _settings.nodesHeightCount; i++)
+        {
+            for (int i = 0; i < _settings.globalNotPaddedWidth + _settings.nodesWidthCount + 2; i++)
+            {
+                cout << "-";
+            }
+            cout << "\n";
+
+            for (int j = 0; j < _settings.localHeight; j++)
+            {
+                cout << i << "|";
+                for (int k = 0; k < _settings.nodesWidthCount; k++)
+                {
+                    for (int l = 0; l < _settings.localWidth; l++)
+                    {
+                        cout << static_cast<int>(_globalTile[(i * _settings.localHeight + j) * _settings.globalWidth + k * _settings.localWidth + l]);
+                    }
+                    cout << "|";
+                }
+                cout << "\n";
+            }
+        }
+
+        for (int i = 0; i < _settings.globalNotPaddedWidth + _settings.nodesWidthCount + 2; i++)
+        {
+            cout << "-";
+        }
+        cout << endl;
     }
 }
 
@@ -612,8 +769,8 @@ void LifeSimulation::run()
         cerr << "Number of iterations: " << _arguments.numberOfIterations << endl;
         cerr << "globalHeight: " << _settings.globalHeight << endl;
         cerr << "globalWidth: " << _settings.globalWidth << endl;
-        cerr << "globalPaddedHeight: " << _settings.globalPaddedHeight << endl;
-        cerr << "globalPaddedWidth: " << _settings.globalPaddedWidth << endl;
+        cerr << "globalNotPaddedHeight: " << _settings.globalNotPaddedHeight << endl;
+        cerr << "globalNotPaddedWidth: " << _settings.globalNotPaddedWidth << endl;
         cerr << "localHeight: " << _settings.localHeight << endl;
         cerr << "localWidth: " << _settings.localWidth << endl;
         cerr << "localHeightWithHaloZones: " << _settings.localHeightWithHaloZones << endl;
@@ -623,8 +780,22 @@ void LifeSimulation::run()
         cerr << "nodesTotalCount: " << _settings.nodesTotalCount << endl;
     }
 
-    performInitialDataExchange();
-    printTilesWithHaloZones(0);
+    exchangeInitialData();
+
+    for (int iteration = 0; iteration < _arguments.numberOfIterations; iteration++)
+    {
+        int destination = iteration & 1;
+        int source = destination ^ 1;
+
+        // TODO: remove source and destination arguments and use swap instead
+        computeHaloZones(source, destination);
+        startHaloZonesExchange(source, destination);
+        computeTile(source, destination);
+        awaitHaloZonesExchange();
+    }
+    
+    collectResults(_arguments.numberOfIterations & 1);
+    printGlobalTile();
 }
 
 int main(int argc, char **argv)
