@@ -1,6 +1,6 @@
 tile_sizes=(256 1024)
 processes=(2 4 8 16 32)
-iterations=(251 444 1111)
+iterations=(251 444 511)
 ems=(1 2)
 
 source ../scripts/load_modules.sh

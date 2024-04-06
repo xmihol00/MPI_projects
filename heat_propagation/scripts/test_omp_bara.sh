@@ -1,6 +1,6 @@
 tile_sizes=(512 2048)
 processes=(2 4 8 16)
-iterations=(250 443 822)
+iterations=(250 443 520)
 threads=(8 4 2)
 ems=(1 2)
 

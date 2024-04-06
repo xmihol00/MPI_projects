@@ -39,5 +39,11 @@ for tile_size in "${tile_sizes[@]}"; do
     done
 done
 
+(grep "FAILED" results.txt > /dev/null && echo -e "\n\033[0;31mSome tests FAILED.\033[0m" || echo -e "\n\033[0;34mAll tests PASSED.\033[0m") | tee -a results.txt
+
 rm temp_par.h5
 rm temp_seq.h5
+rm temp_seq_int.txt
+rm temp_par_int.txt
+rm temp_seq.txt
+rm temp_par.txt
