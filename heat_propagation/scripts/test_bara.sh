@@ -1,5 +1,5 @@
 tile_sizes=(256 1024)
-processes=(2 4 8 16 32)
+processes=(16 32)
 iterations=(251 444 511)
 ems=(1 2)
 
@@ -18,21 +18,29 @@ for tile_size in "${tile_sizes[@]}"; do
                     if [ $((2*$process)) -lt $tile_size ]; then
                         echo "command -s $tile_size: srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp" | tee -a results.txt
                         srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp | tee -a results.txt
-                        ../scripts/h5_comparrison.sh | tee -a results.txt
+                        if [ $tile_size -lt 513 ]; then
+                            ../scripts/h5_comparrison.sh | tee -a results.txt
+                        fi
                         echo "" | tee -a results.txt
                         echo "command -s $tile_size: srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp -p" | tee -a results.txt
                         srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp -p | tee -a results.txt
-                        ../scripts/h5_comparrison.sh | tee -a results.txt
+                        if [ $tile_size -lt 513 ]; then
+                            ../scripts/h5_comparrison.sh | tee -a results.txt
+                        fi
                         echo "" | tee -a results.txt
                     fi
 
                     echo "command -s $tile_size: srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp" | tee -a results.txt
                     srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp | tee -a results.txt
-                    ../scripts/h5_comparrison.sh | tee -a results.txt
+                    if [ $tile_size -lt 513 ]; then
+                        ../scripts/h5_comparrison.sh | tee -a results.txt
+                    fi
                     echo "" | tee -a results.txt
                     echo "command -s $tile_size: srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp -p" | tee -a results.txt
                     srun -N 1 -n $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp -p | tee -a results.txt
-                    ../scripts/h5_comparrison.sh | tee -a results.txt
+                    if [ $tile_size -lt 513 ]; then
+                        ../scripts/h5_comparrison.sh | tee -a results.txt
+                    fi
                     echo "" | tee -a results.txt
                 done
             done

@@ -17,21 +17,29 @@ for tile_size in "${tile_sizes[@]}"; do
                     if [ $((2*$process)) -lt $tile_size ]; then
                         echo "command -s $tile_size: mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp" | tee -a results.txt
                         mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp | tee -a results.txt
-                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        if [ $tile_size -lt 513 ]; then
+                            ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        fi
                         echo "" | tee -a results.txt
                         echo "command -s $tile_size: mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp -p" | tee -a results.txt
                         mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -o temp -p | tee -a results.txt
-                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        if [ $tile_size -lt 513 ]; then
+                            ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                        fi
                         echo "" | tee -a results.txt
                     fi
 
                     echo "command -s $tile_size: mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp" | tee -a results.txt
                     mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp | tee -a results.txt
-                    ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                    if [ $tile_size -lt 513 ]; then
+                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                    fi
                     echo "" | tee -a results.txt
                     echo "command -s $tile_size: mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp -p" | tee -a results.txt
                     mpirun --oversubscribe -np $process ./ppp_proj01 -i ppp_input_data.h5 -m $em -n $iteration -v -g -o temp -p | tee -a results.txt
-                    ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                    if [ $tile_size -lt 513 ]; then
+                        ../heat_propagation/scripts/h5_comparrison.sh | tee -a results.txt
+                    fi
                     echo "" | tee -a results.txt
                 done
             done
