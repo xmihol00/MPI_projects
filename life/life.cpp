@@ -481,9 +481,24 @@ void LifeSimulation::readInputFile()
 
         // adjust the dimensions of the grid to be divisible by the number of nodes in the grid and add additional padding if specified
         _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.padding) / 
-                                         _settings.nodesWidthCount) * _settings.nodesWidthCount;
+                                 _settings.nodesWidthCount) * _settings.nodesWidthCount;
         _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.padding) / 
-                                 _settings.nodesHeightCount) * _settings.nodesHeightCount;
+                                  _settings.nodesHeightCount) * _settings.nodesHeightCount;
+        
+        if (_settings.globalWidth != _settings.globalNotPaddedWidth + 2 * _arguments.padding)
+        {
+            cerr << "Warning: The input file X dimension (width) of " << _settings.globalNotPaddedWidth 
+                 << (_arguments.padding ? " with the additional padding " : " ") 
+                 << "is not divisible by the X decomposition dimension." << endl;
+            cerr << "         The grid X dimension will be extended to " << _settings.globalWidth << "." << endl;
+        }
+        if (_settings.globalHeight != _settings.globalNotPaddedHeight + 2 * _arguments.padding)
+        {
+            cerr << "Warning: The input file Y dimension (height) of " << _settings.globalNotPaddedHeight 
+                 << (_arguments.padding ? " with the additional padding " : " ") << "is not divisible by the Y decomposition dimension." << endl;
+            cerr << "         The grid Y dimension will be extended to " << _settings.globalHeight << "." << endl;
+        }
+        
         _settings.localWidth = _settings.globalWidth / _settings.nodesWidthCount;
         _settings.localHeight = _settings.globalHeight / _settings.nodesHeightCount;
         _settings.localWidthWithHaloZones = _settings.localWidth + 2;
@@ -493,7 +508,6 @@ void LifeSimulation::readInputFile()
         int rowPadding = (_settings.globalWidth - _settings.globalNotPaddedWidth) >> 1;
         int colPadding = (_settings.globalHeight - _settings.globalNotPaddedHeight) >> 1;
 
-        int readLines = 0;
         _globalTile = static_cast<cell_t *>(aligned_alloc(64, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t)));
         if (_globalTile == nullptr)
         {
@@ -502,6 +516,7 @@ void LifeSimulation::readInputFile()
         }
         memset(_globalTile, 0, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t));
 
+        int readLines = 0;
         int idx = colPadding * _settings.globalWidth;
         do
         {
@@ -661,12 +676,10 @@ void LifeSimulation::exchangeInitialData()
     // partition the global tile into local tiles and scatter them to all processes in the grid
     MPI_Scatterv(_globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _tileResizedType, 
                  _nextTile, 1, _tileWithHaloZonesType, ROOT, _gridCommunicator);
-    debugPrintLocalTile(false);
     // perform the initial exchange of halo zones
     startHaloZonesExchange();
     // wait for the initial exchange of halo zones to finish
     awaitHaloZonesExchange();
-    debugPrintLocalTile(false);
     // copy the initial data into the second tile
     copy(_nextTile, _nextTile + _settings.localTileSizeWithHaloZones, _currentTile);
 }
@@ -725,7 +738,6 @@ void LifeSimulation::startHaloZonesExchange()
         _cornerRecvRequests[LEFT_LOWER] = MPI_REQUEST_NULL;
     }
 
-    cerr << "Rank " << _worldRank << ": north " << _neighbors[NORTH] << " south " << _neighbors[SOUTH] << " west " << _neighbors[WEST] << " east " << _neighbors[EAST] << endl;
     MPI_Ineighbor_alltoallw(_nextTile, _neighbourCounts, _neighbourDisplacements, _sendHaloZoneTypes, _nextTile, 
                             _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _gridCommunicator, &_haloZoneRequest);
 }
