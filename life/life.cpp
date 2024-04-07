@@ -43,7 +43,7 @@
 using namespace std;
 using cell_t = uint8_t;
 
-#if 1
+#if 0
     #define INFO_PRINT_RANK0(rank, message) if (rank == 0) { cerr << "Info: " << message << endl; }
     #define INFO_PRINT(message) { cerr << "Info rank " << _worldRank << ": " << message << endl; }
 #else
@@ -108,6 +108,8 @@ private:
         string inputFileName;
         int numberOfIterations;
         int padding = 0;
+        int paddingHeight = 0;
+        int paddingWidth = 0;
         bool wraparound = false;
         int nodesHeightCount = 0;
         int nodesWidthCount = 0;
@@ -156,10 +158,15 @@ private:
 
     inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
 
+    inline constexpr bool isTopRow()      { return _neighbors[NORTH] == MPI_PROC_NULL; };
+    inline constexpr bool isBottomRow()   { return _neighbors[SOUTH] == MPI_PROC_NULL; };
+    inline constexpr bool isLeftColumn()  { return _neighbors[WEST]  == MPI_PROC_NULL; };
+    inline constexpr bool isRightColumn() { return _neighbors[EAST]  == MPI_PROC_NULL; };
+
     inline constexpr bool isNotTopRow()      { return _neighbors[NORTH] != MPI_PROC_NULL; };
     inline constexpr bool isNotBottomRow()   { return _neighbors[SOUTH] != MPI_PROC_NULL; };
-    inline constexpr bool isNotLeftColumn()  { return _neighbors[WEST] != MPI_PROC_NULL; };
-    inline constexpr bool isNotRightColumn() { return _neighbors[EAST] != MPI_PROC_NULL; };
+    inline constexpr bool isNotLeftColumn()  { return _neighbors[WEST]  != MPI_PROC_NULL; };
+    inline constexpr bool isNotRightColumn() { return _neighbors[EAST]  != MPI_PROC_NULL; };
 };
 
 LifeSimulation::LifeSimulation(int argc, char **argv)
@@ -280,8 +287,10 @@ void LifeSimulation::parseArguments(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
+    // parse additional arguments
     for (auto iterator = arguments.begin() + 3; iterator != arguments.end(); iterator++)
     {
+        auto lastIterator = iterator;
         if (*iterator == "-w" || *iterator == "--wraparound")
         {
             _arguments.wraparound = true;
@@ -291,30 +300,60 @@ void LifeSimulation::parseArguments(int argc, char **argv)
             iterator++;
             if (iterator == arguments.end())
             {
-                missingArgumentError(*(iterator - 1));
+                missingArgumentError(*lastIterator);
             }
 
-            _arguments.nodesWidthCount = parseInt(*iterator, *(iterator - 1));
+            _arguments.nodesWidthCount = parseInt(*iterator, *lastIterator);
         }
         else if (*iterator == "-dy" || *iterator == "--decomposition_y")
         {
             iterator++;
             if (iterator == arguments.end())
             {
-                missingArgumentError(*(iterator - 1));
+                missingArgumentError(*lastIterator);
             }
 
-            _arguments.nodesHeightCount = parseInt(*iterator, *(iterator - 1));
+            _arguments.nodesHeightCount = parseInt(*iterator, *lastIterator);
         }
         else if (*iterator == "-p" || *iterator == "--padding")
         {
             iterator++;
             if (iterator == arguments.end())
             {
-                missingArgumentError(*(iterator - 1));
+                missingArgumentError(*lastIterator);
             }
 
-            _arguments.padding = parseInt(*iterator, *(iterator - 1));
+            _arguments.padding = parseInt(*iterator, *lastIterator);
+
+            // write-through the padding also to the specific paddings if not specified yet
+            if (_arguments.paddingHeight == 0)
+            {
+                _arguments.paddingHeight = _arguments.padding;
+            }
+            if (_arguments.paddingWidth == 0)
+            {
+                _arguments.paddingWidth = _arguments.padding;
+            }
+        }
+        else if (*iterator == "px" || *iterator == "--padding_x")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingWidth = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "py" || *iterator == "--padding_y")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingHeight = parseInt(*iterator, *lastIterator);
         }
         else
         {
@@ -328,7 +367,8 @@ void LifeSimulation::parseArguments(int argc, char **argv)
 
 void LifeSimulation::constructMeshTopology()
 {
-    int msbPosition = sizeof(int) * 8 - 1 - __builtin_clz(_worldSize);
+    int msbPosition = sizeof(int) * 8 - 1 - __builtin_clz(_worldSize); // get the number of processes which is a power of 2
+
     if (_arguments.nodesHeightCount == 0 && _arguments.nodesWidthCount == 0) // topology dimensions not specified
     {
         if (msbPosition & 1) // msb is odd
@@ -404,7 +444,7 @@ void LifeSimulation::constructMeshTopology()
     int coordinates[2];
     MPI_Cart_coords(_meshCommunicator, _meshRank, 2, coordinates);
 
-    // left top corner
+    // left top corner (NW)
     coordinates[0]--;
     coordinates[1]--;
     if (coordinates[0] >= 0 && coordinates[1] >= 0)
@@ -422,7 +462,7 @@ void LifeSimulation::constructMeshTopology()
         _cornerNeighbors[LEFT_UPPER] = MPI_PROC_NULL;
     }
 
-    // right top corner
+    // right top corner (NE)
     coordinates[1] += 2;
     if (coordinates[0] >= 0 && coordinates[1] < _settings.nodesWidthCount)
     {
@@ -438,7 +478,7 @@ void LifeSimulation::constructMeshTopology()
         _cornerNeighbors[RIGHT_UPPER] = MPI_PROC_NULL;
     }
 
-    // right bottom corner
+    // right bottom corner (SE)
     coordinates[0] += 2;
     if (coordinates[0] < _settings.nodesHeightCount && coordinates[1] < _settings.nodesWidthCount)
     {
@@ -454,7 +494,7 @@ void LifeSimulation::constructMeshTopology()
         _cornerNeighbors[RIGHT_LOWER] = MPI_PROC_NULL;
     }
 
-    // left bottom corner
+    // left bottom corner (SW)
     coordinates[1] -= 2;
     if (coordinates[0] < _settings.nodesHeightCount && coordinates[1] >= 0)
     {
@@ -503,9 +543,9 @@ void LifeSimulation::readInputFile()
         string row;
         getline(inputFile, row);
 
-        // determine the dimensions of the file based on the first row
+        // determine the dimensions of the grid based on the first row
         _settings.globalNotPaddedWidth = row.length();
-        _settings.globalNotPaddedHeight = (fileSize + 1) / (_settings.globalNotPaddedWidth + 1); // +1 for the newline character
+        _settings.globalNotPaddedHeight = (fileSize + 1) / (_settings.globalNotPaddedWidth + 1); // +1 for newline characters
         if (_settings.globalNotPaddedHeight * (_settings.globalNotPaddedWidth + 1) != fileSize && 
             _settings.globalNotPaddedHeight * (_settings.globalNotPaddedWidth + 1) - 1 != fileSize)
         {
@@ -513,23 +553,23 @@ void LifeSimulation::readInputFile()
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        // adjust the dimensions of the grid to be divisible by the number of nodes in the mesh and add additional padding if specified
-        _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.padding) / 
+        // adjust the dimensions of the grid to be divisible by the number of nodes in the mesh, also add additional padding if specified
+        _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.paddingWidth) / 
                                  _settings.nodesWidthCount) * _settings.nodesWidthCount;
-        _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.padding) / 
+        _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.paddingHeight) / 
                                   _settings.nodesHeightCount) * _settings.nodesHeightCount;
         
         if (_settings.globalWidth != _settings.globalNotPaddedWidth + 2 * _arguments.padding)
         {
             cerr << "Warning: The input file X dimension (width) of " << _settings.globalNotPaddedWidth 
-                 << (_arguments.padding ? " with the additional padding " : " ") 
+                 << (_arguments.paddingWidth ? " with the additional padding " : " ") 
                  << "is not divisible by the X decomposition dimension." << endl;
             cerr << "         The grid X dimension will be extended to " << _settings.globalWidth << "." << endl;
         }
         if (_settings.globalHeight != _settings.globalNotPaddedHeight + 2 * _arguments.padding)
         {
             cerr << "Warning: The input file Y dimension (height) of " << _settings.globalNotPaddedHeight 
-                 << (_arguments.padding ? " with the additional padding " : " ") << "is not divisible by the Y decomposition dimension." << endl;
+                 << (_arguments.paddingHeight ? " with the additional padding " : " ") << "is not divisible by the Y decomposition dimension." << endl;
             cerr << "         The grid Y dimension will be extended to " << _settings.globalHeight << "." << endl;
         }
         
@@ -539,25 +579,27 @@ void LifeSimulation::readInputFile()
         _settings.localHeightWithHaloZones = _settings.localHeight + 2;
         _settings.localTileSize = _settings.localHeight * _settings.localWidth;
         _settings.localTileSizeWithHaloZones = _settings.localHeightWithHaloZones * _settings.localWidthWithHaloZones;
+
+        // offsets in the global grid of the read data
         int rowPadding = (_settings.globalWidth - _settings.globalNotPaddedWidth) >> 1;
         int colPadding = (_settings.globalHeight - _settings.globalNotPaddedHeight) >> 1;
 
-        if (false)
-        {
-            cerr << "Number of iterations: " << _arguments.numberOfIterations << endl;
-            cerr << "globalHeight: " << _settings.globalHeight << endl;
-            cerr << "globalWidth: " << _settings.globalWidth << endl;
-            cerr << "globalNotPaddedHeight: " << _settings.globalNotPaddedHeight << endl;
-            cerr << "globalNotPaddedWidth: " << _settings.globalNotPaddedWidth << endl;
-            cerr << "localHeight: " << _settings.localHeight << endl;
-            cerr << "localWidth: " << _settings.localWidth << endl;
+        #ifdef DEBUG_PRINT
+            cerr << "Number of iterations:     " << _arguments.numberOfIterations << endl;
+            cerr << "globalHeight:             " << _settings.globalHeight << endl;
+            cerr << "globalWidth:              " << _settings.globalWidth << endl;
+            cerr << "globalNotPaddedHeight:    " << _settings.globalNotPaddedHeight << endl;
+            cerr << "globalNotPaddedWidth:     " << _settings.globalNotPaddedWidth << endl;
+            cerr << "localHeight:              " << _settings.localHeight << endl;
+            cerr << "localWidth:               " << _settings.localWidth << endl;
             cerr << "localHeightWithHaloZones: " << _settings.localHeightWithHaloZones << endl;
-            cerr << "localWidthWithHaloZones: " << _settings.localWidthWithHaloZones << endl;
-            cerr << "nodesHeightCount: " << _settings.nodesHeightCount << endl;
-            cerr << "nodesWidthCount: " << _settings.nodesWidthCount << endl;
-            cerr << "nodesTotalCount: " << _settings.nodesTotalCount << endl;
-        }
+            cerr << "localWidthWithHaloZones:  " << _settings.localWidthWithHaloZones << endl;
+            cerr << "nodesHeightCount:         " << _settings.nodesHeightCount << endl;
+            cerr << "nodesWidthCount:          " << _settings.nodesWidthCount << endl;
+            cerr << "nodesTotalCount:          " << _settings.nodesTotalCount << endl;
+        #endif
 
+        // allocate and initialize the global tile
         _globalTile = static_cast<cell_t *>(aligned_alloc(64, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t)));
         if (_globalTile == nullptr)
         {
@@ -571,7 +613,7 @@ void LifeSimulation::readInputFile()
         do
         {
             idx += rowPadding;
-            if (row.length() != static_cast<size_t>(_settings.globalNotPaddedWidth))
+            if (row.length() != static_cast<size_t>(_settings.globalNotPaddedWidth)) // unexpected row length
             {
                 cerr << "Error: The input file must contain a rectangular grid of '1' and '0' characters." << endl;
                 MPI_Abort(MPI_COMM_WORLD, 1);
@@ -736,11 +778,12 @@ void LifeSimulation::exchangeInitialData()
 
 void LifeSimulation::startHaloZonesExchange()
 {
+    // initiate corner exchanges
     if (_cornerNeighbors[LEFT_UPPER] != MPI_PROC_NULL)
     {
-        MPI_Isend(_nextTile + _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], 0, 
+        MPI_Isend(_nextTile + _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], LEFT_UPPER, 
                   _meshCommunicator, &_cornerSendRequests[LEFT_UPPER]);
-        MPI_Irecv(_nextTile, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], 0, 
+        MPI_Irecv(_nextTile, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], RIGHT_LOWER, 
                   _meshCommunicator, &_cornerRecvRequests[LEFT_UPPER]);
     }
     else
@@ -751,9 +794,9 @@ void LifeSimulation::startHaloZonesExchange()
 
     if (_cornerNeighbors[RIGHT_UPPER] != MPI_PROC_NULL)
     {
-        MPI_Isend(_nextTile +  2 * _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], 0, 
+        MPI_Isend(_nextTile +  2 * _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], RIGHT_UPPER, 
                   _meshCommunicator, &_cornerSendRequests[RIGHT_UPPER]);
-        MPI_Irecv(_nextTile + _settings.localWidthWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], 0, 
+        MPI_Irecv(_nextTile + _settings.localWidthWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], LEFT_LOWER, 
                   _meshCommunicator, &_cornerRecvRequests[RIGHT_UPPER]);
     }
     else
@@ -764,9 +807,9 @@ void LifeSimulation::startHaloZonesExchange()
 
     if (_cornerNeighbors[RIGHT_LOWER] != MPI_PROC_NULL)
     {
-        MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], 0, 
+        MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], RIGHT_LOWER, 
                   _meshCommunicator, &_cornerSendRequests[RIGHT_LOWER]);
-        MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], 0,
+        MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], LEFT_UPPER,
                   _meshCommunicator, &_cornerRecvRequests[RIGHT_LOWER]);
     }
     else
@@ -777,9 +820,9 @@ void LifeSimulation::startHaloZonesExchange()
 
     if (_cornerNeighbors[LEFT_LOWER] != MPI_PROC_NULL)
     {
-        MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], 0, 
+        MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], LEFT_LOWER, 
                   _meshCommunicator, &_cornerSendRequests[LEFT_LOWER]);
-        MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], 0,
+        MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], RIGHT_UPPER,
                   _meshCommunicator, &_cornerRecvRequests[LEFT_LOWER]);
     }
     else
@@ -788,14 +831,18 @@ void LifeSimulation::startHaloZonesExchange()
         _cornerRecvRequests[LEFT_LOWER] = MPI_REQUEST_NULL;
     }
 
+    // initiate halo zone exchanges
     MPI_Ineighbor_alltoallw(_nextTile, _neighbourCounts, _neighbourDisplacements, _sendHaloZoneTypes, _nextTile, 
                             _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _meshCommunicator, &_haloZoneRequest);
 }
 
 void LifeSimulation::awaitHaloZonesExchange()
 {
+    // await corner exchanges
     MPI_Waitall(4, _cornerSendRequests, MPI_STATUSES_IGNORE);
     MPI_Waitall(4, _cornerRecvRequests, MPI_STATUSES_IGNORE);
+
+    // await halo zone exchanges
     MPI_Wait(&_haloZoneRequest, MPI_STATUS_IGNORE);
 }
 
@@ -830,8 +877,8 @@ void LifeSimulation::computeHaloZones()
         int centerIdx = i * _settings.localWidthWithHaloZones;
         int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones;
         nextTile[centerIdx + 1] = updateCell(currentTile[topIdx], currentTile[topIdx + 1], currentTile[topIdx + 2],
-                                                currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
-                                                currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
+                                             currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
+                                             currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
     }
 
     // east halo zone
@@ -841,16 +888,16 @@ void LifeSimulation::computeHaloZones()
         int centerIdx = i * _settings.localWidthWithHaloZones - 3;
         int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones - 3;
         nextTile[centerIdx + 1] = updateCell(currentTile[topIdx], currentTile[topIdx + 1], currentTile[topIdx + 2],
-                                                currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
-                                                currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
+                                             currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
+                                             currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
     }
     
     // south halo zone
     for (int i = 1; i < _settings.localWidthWithHaloZones - 1; i++)
     {
         nextBottomRow1[i] = updateCell(currentBottomRow0[i - 1], currentBottomRow0[i], currentBottomRow0[i + 1], 
-                                        currentBottomRow1[i - 1], currentBottomRow1[i], currentBottomRow1[i + 1], 
-                                        currentBottomRow2[i - 1], currentBottomRow2[i], currentBottomRow2[i + 1]);
+                                       currentBottomRow1[i - 1], currentBottomRow1[i], currentBottomRow1[i + 1], 
+                                       currentBottomRow2[i - 1], currentBottomRow2[i], currentBottomRow2[i + 1]);
     }
 }
 
@@ -930,7 +977,8 @@ void LifeSimulation::testPrintGlobalTile()
 
 void LifeSimulation::prettyPrintGlobalTile()
 {
-    auto fillInProcessId = [](int processId, string &target)
+    // format table header string with a process rank
+    auto fillInProcessRank = [](int processId, string &target)
     {
         string processIdStr = to_string(processId);
 
@@ -956,7 +1004,7 @@ void LifeSimulation::prettyPrintGlobalTile()
         for (int i = 0; i < _settings.nodesWidthCount; i++)
         {
             cout << "|";
-            fillInProcessId(i, horizontalProcessId);
+            fillInProcessRank(i, horizontalProcessId);
             cout << horizontalProcessId;
         }
         cout << "|\n";
@@ -965,7 +1013,7 @@ void LifeSimulation::prettyPrintGlobalTile()
         for (int i = 0; i < _settings.nodesHeightCount; i++)
         {
             cout << horizontalSeparator << "\n";
-            fillInProcessId(i, verticalProcessId);
+            fillInProcessRank(i, verticalProcessId);
 
             for (int j = 0; j < _settings.localHeight; j++)
             {
@@ -995,6 +1043,7 @@ void LifeSimulation::run()
 
     exchangeInitialData();
 
+    // simulation loop
     for (int iteration = 0; iteration < _arguments.numberOfIterations; iteration++)
     {   
         computeHaloZones();
@@ -1019,7 +1068,7 @@ int main(int argc, char **argv)
     {
         LifeSimulation simulation(argc, argv);
         simulation.run();
-    } // ensure all resources are freed before MPI_Finalize
+    } // ensure all resources are deallocated before MPI_Finalize
 
     MPI_Finalize();
     return 0;
