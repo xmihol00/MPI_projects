@@ -625,13 +625,6 @@ void LifeSimulation::computeHaloZones()
             int topIdx = (i - 1) * _settings.localWidthWithHaloZones;
             int centerIdx = i * _settings.localWidthWithHaloZones;
             int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones;
-            if (_gridRank == 1)
-            {
-                cerr << "Rank: " << _gridRank << "\n";
-                cerr << "topIdx: " << topIdx << "\n";
-                cerr << "centerIdx: " << centerIdx << "\n";
-                cerr << "bottomIdx: " << bottomIdx << "\n";
-            }
             nextTile[centerIdx + 1] = updateCell(currentTile[topIdx], currentTile[topIdx + 1], currentTile[topIdx + 2],
                                                  currentTile[centerIdx], currentTile[centerIdx + 1], currentTile[centerIdx + 2],
                                                  currentTile[bottomIdx], currentTile[bottomIdx + 1], currentTile[bottomIdx + 2]);
@@ -793,9 +786,7 @@ void LifeSimulation::run()
         return;
     }
 
-    prettyPrintGlobalTile();
-
-    if (_worldRank == ROOT)
+    if (_worldRank == ROOT && false)
     {
         cerr << "Number of iterations: " << _arguments.numberOfIterations << endl;
         cerr << "globalHeight: " << _settings.globalHeight << endl;
@@ -816,19 +807,16 @@ void LifeSimulation::run()
     for (int iteration = 0; iteration < _arguments.numberOfIterations; iteration++)
     {   
         computeHaloZones();
-
-        debugPrintLocalTile(false);
-        
         startHaloZonesExchange();
         computeTile();
         awaitHaloZonesExchange();
 
         swap(_currentTile, _nextTile);
-        debugPrintLocalTile(true);
     }
     
     collectResults();
     #ifdef TEST_PRINT
+        testPrintGlobalTile();
     #endif
     prettyPrintGlobalTile();
 }
