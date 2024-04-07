@@ -3,16 +3,19 @@ CURRENT_DIR = $(shell pwd)
 PROJECT_DIR = $(MAKEFILE_DIR:$(CURRENT_DIR)/%=%)
 
 CC = mpic++
-CFLAGS = -Wall -Wextra -std=c++17 -O3 -Wno-cast-function-type
+CFLAGS = -Wall -Wextra -std=c++17 -O3 -Wno-cast-function-type -fopenmp
 CPP_SRC = $(wildcard $(PROJECT_DIR)/*.cpp)
+
+TARGET = $(PROJECT_DIR)/life
+TARGET_TEST = $(PROJECT_DIR)/life_test
 
 .PHONY: all run clean
 
 all:
-	$(CC) $(CFLAGS) $(CPP_SRC) -o $(PROJECT_DIR)/life
+	$(CC) $(CFLAGS) $(CPP_SRC) -o $(TARGET)
 
 test:
-	$(CC) $(CFLAGS) $(CPP_SRC) -DTEST_PRINT -o $(PROJECT_DIR)/life_test
+	$(CC) $(CFLAGS) $(CPP_SRC) -DTEST_PRINT -o $(TARGET_TEST)
 
 clean: 
-	rm -f $(PROJECT_DIR)/life $(PROJECT_DIR)/life_test
+	rm -f $(TARGET) $(TARGET_TEST)

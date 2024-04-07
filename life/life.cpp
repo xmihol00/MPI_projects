@@ -8,7 +8,29 @@
 
 // =======================================================================================================================================================
 // Description of the solution:
-// * 
+// 1. Processes are organized into a 2D (cartesian) mesh topology. The dimensions of the mesh can be specified by the user, see TODO, or are derived 
+//    automatically. The automatically derived mesh dimensions will always contain a power of 2 processes, see TODO. Processes that do not fit into the 
+//    mesh will not be utilized. Lastly, each process in the mesh retrieves ranks of its neighbors, especially of its corner neighbors (NW, NE, SE, SW).
+// 2. The input file is read only by the root process. Based on the size of the input file and the length of the first row, the global grid dimensions, 
+//    i.e. the simulation space, are determined. The global grid dimensions are adjusted to be divisible by the number of nodes in each dimension of the
+//    mesh. The content of the file is then read to the global grid with evenly distributed padding of '0' if necessary or as specified by the user.
+// 3. The root process computes the sizes of local tiles, i.e. the parts of the global grid assigned to each process, and broadcasts this information to
+//    all the processes.
+// 4. Each process creates MPI data types specifying its local tile, the tile with halo zones (edges of the local tiles of neighboring processes, which 
+//    must be visible to a given process), and the halo zones. These MPI data types are same for all processes. 
+// 5. Each process allocates memory for two local tiles, one for the current state of the simulation and one for the next state to realize so called 
+//    ping-pong buffering.
+// 6. The root process partitions (not explicitly, this is done by MPI) the global grid into local tiles and scatters them to all processes in the mesh.
+//    Initial halo zone exchange is performed, i.e. each process sends its halo zones to its neighbors and receives halo zones from its neighbors. Now, 
+//    all processes have the initial state, which is also copied to the second local tile.
+// 7. The simulation is started. In each iteration, the following steps are performed:
+//    a) Each process computes the next state around the edges of its local tile, i.e. the halo zones.
+//    b) Non-blocking exchange of halo zones is initiated.
+//    c) The computation of the next state is performed (tile edges not included anymore). This is accelerated with SIMD instructions.
+//    d) The exchange of halo zones is awaited.
+//    e) current and next state tiles are swapped.
+// 8. After the simulation is finished, the local tiles are gathered back to the root process (without the halo zones) and the content of the global grid
+//    is printed in a table-like format which shows what part of the grid was computed by which process.
 // =======================================================================================================================================================
 
 #include <mpi.h>
@@ -38,8 +60,8 @@ public:
 
 private:
     void parseArguments(int argc, char **argv);
-    void constructGridTopology();
-    void destructGridTopology();
+    void constructMeshTopology();
+    void destructMeshTopology();
     void readInputFile();
     void constructDataTypes();
     void destructDataTypes();
@@ -74,12 +96,12 @@ private:
     static constexpr int ROOT = 0;
 
     MPI_Comm _subWorldCommunicator;
-    MPI_Comm _gridCommunicator;
+    MPI_Comm _meshCommunicator;
 
     int _worldRank;
     int _worldSize;
-    int _gridSize;
-    int _gridRank;
+    int _meshSize;
+    int _meshRank;
 
     struct Arguments
     {
@@ -134,9 +156,9 @@ private:
 
     inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
 
-    inline constexpr bool isNotTopRow() { return _neighbors[NORTH] != MPI_PROC_NULL; };
-    inline constexpr bool isNotBottomRow() { return _neighbors[SOUTH] != MPI_PROC_NULL; };
-    inline constexpr bool isNotLeftColumn() { return _neighbors[WEST] != MPI_PROC_NULL; };
+    inline constexpr bool isNotTopRow()      { return _neighbors[NORTH] != MPI_PROC_NULL; };
+    inline constexpr bool isNotBottomRow()   { return _neighbors[SOUTH] != MPI_PROC_NULL; };
+    inline constexpr bool isNotLeftColumn()  { return _neighbors[WEST] != MPI_PROC_NULL; };
     inline constexpr bool isNotRightColumn() { return _neighbors[EAST] != MPI_PROC_NULL; };
 };
 
@@ -146,7 +168,7 @@ LifeSimulation::LifeSimulation(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &_worldRank);
     MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
 
-    constructGridTopology();
+    constructMeshTopology();
     readInputFile();
 
     if (isActiveProcess())
@@ -162,12 +184,13 @@ LifeSimulation::~LifeSimulation()
     {
         destructGridTiles();
         destructDataTypes();
-        destructGridTopology();
+        destructMeshTopology();
     }
 }
 
 void LifeSimulation::parseArguments(int argc, char **argv)
 {
+    // lambda function for printing an error message when a required argument is missing
     auto missingArgumentError = [&](const string &name)
     {
         if (_worldRank == ROOT)
@@ -177,6 +200,7 @@ void LifeSimulation::parseArguments(int argc, char **argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
     };
 
+    // lambda function for parsing an integer argument
     auto parseInt = [&](const string &argument, const string &name) -> int
     {
         int value = 0;
@@ -213,7 +237,17 @@ void LifeSimulation::parseArguments(int argc, char **argv)
         return value;
     };
     
+    // convert arguments to a vector of strings
     vector<string> arguments(argv, argv + argc);
+
+    if (arguments.size() < 3)
+    {
+        if (_worldRank == ROOT)
+        {
+            cerr << "Error: Not enough arguments (missing 'grid file name' and/or 'number of iterations')." << endl;
+        }
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     _arguments.inputFileName = arguments[1];
     try
@@ -292,7 +326,7 @@ void LifeSimulation::parseArguments(int argc, char **argv)
     }
 }
 
-void LifeSimulation::constructGridTopology()
+void LifeSimulation::constructMeshTopology()
 {
     int msbPosition = sizeof(int) * 8 - 1 - __builtin_clz(_worldSize);
     if (_arguments.nodesHeightCount == 0 && _arguments.nodesWidthCount == 0) // topology dimensions not specified
@@ -338,13 +372,13 @@ void LifeSimulation::constructGridTopology()
     }
     _settings.nodesTotalCount = _settings.nodesWidthCount * _settings.nodesHeightCount;
     
-    int color = _worldRank >= _settings.nodesTotalCount; // exclude processes that will not fit on the grid
+    int color = _worldRank >= _settings.nodesTotalCount; // exclude processes that will not fit in the mesh
     if (color)
     {
-        cerr << "Warning: Process " << _worldRank << " is not going to be part of the grid, i.e. will be idle." << endl;
+        cerr << "Warning: Process " << _worldRank << " is not going to be part of the mesh, i.e. will be idle." << endl;
         MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_subWorldCommunicator);
         _subWorldCommunicator = MPI_COMM_NULL;
-        _gridCommunicator = MPI_COMM_NULL;
+        _meshCommunicator = MPI_COMM_NULL;
 
         return; // this process will no longer be utilized
     }
@@ -353,35 +387,35 @@ void LifeSimulation::constructGridTopology()
         MPI_Comm_split(MPI_COMM_WORLD, color, _worldRank, &_subWorldCommunicator);
     }
 
-    // create a 2D grid/mesh topology
+    // create a 2D mesh topology
     MPI_Cart_create(_subWorldCommunicator, 2, 
                     array<int, 2>{_settings.nodesHeightCount, _settings.nodesWidthCount}.data(), 
                     array<int, 2>{_arguments.wraparound, _arguments.wraparound}.data(), 
-                    0, &_gridCommunicator);
-    // retrieve the rank and size of the grid communicator
-    MPI_Comm_rank(_gridCommunicator, &_gridRank);
-    MPI_Comm_size(_gridCommunicator, &_gridSize);
+                    0, &_meshCommunicator);
+    // retrieve the rank and size of the mesh communicator
+    MPI_Comm_rank(_meshCommunicator, &_meshRank);
+    MPI_Comm_size(_meshCommunicator, &_meshSize);
 
     // retrieve the neighbors of the current process
-    MPI_Cart_shift(_gridCommunicator, 0, 1, &_neighbors[NORTH], &_neighbors[SOUTH]);
-    MPI_Cart_shift(_gridCommunicator, 1, 1, &_neighbors[WEST], &_neighbors[EAST]);
+    MPI_Cart_shift(_meshCommunicator, 0, 1, &_neighbors[NORTH], &_neighbors[SOUTH]);
+    MPI_Cart_shift(_meshCommunicator, 1, 1, &_neighbors[WEST], &_neighbors[EAST]);
 
     // retrieve the coordinates of the current process
     int coordinates[2];
-    MPI_Cart_coords(_gridCommunicator, _gridRank, 2, coordinates);
+    MPI_Cart_coords(_meshCommunicator, _meshRank, 2, coordinates);
 
     // left top corner
     coordinates[0]--;
     coordinates[1]--;
     if (coordinates[0] >= 0 && coordinates[1] >= 0)
     {
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[LEFT_UPPER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[LEFT_UPPER]);
     }
     else if (_arguments.wraparound)
     {
         coordinates[0] = (coordinates[0] + _settings.nodesHeightCount) % _settings.nodesHeightCount;
         coordinates[1] = (coordinates[1] + _settings.nodesWidthCount) % _settings.nodesWidthCount;
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[LEFT_UPPER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[LEFT_UPPER]);
     }
     else
     {
@@ -392,12 +426,12 @@ void LifeSimulation::constructGridTopology()
     coordinates[1] += 2;
     if (coordinates[0] >= 0 && coordinates[1] < _settings.nodesWidthCount)
     {
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[RIGHT_UPPER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[RIGHT_UPPER]);
     }
     else if (_arguments.wraparound)
     {
         coordinates[1] = coordinates[1] - _settings.nodesWidthCount;
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[RIGHT_UPPER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[RIGHT_UPPER]);
     }
     else
     {
@@ -408,12 +442,12 @@ void LifeSimulation::constructGridTopology()
     coordinates[0] += 2;
     if (coordinates[0] < _settings.nodesHeightCount && coordinates[1] < _settings.nodesWidthCount)
     {
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[RIGHT_LOWER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[RIGHT_LOWER]);
     }
     else if (_arguments.wraparound)
     {
         coordinates[0] = coordinates[0] - _settings.nodesHeightCount;
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[RIGHT_LOWER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[RIGHT_LOWER]);
     }
     else
     {
@@ -424,12 +458,12 @@ void LifeSimulation::constructGridTopology()
     coordinates[1] -= 2;
     if (coordinates[0] < _settings.nodesHeightCount && coordinates[1] >= 0)
     {
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[LEFT_LOWER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[LEFT_LOWER]);
     }
     else if (_arguments.wraparound)
     {
         coordinates[1] = coordinates[1] + _settings.nodesWidthCount;
-        MPI_Cart_rank(_gridCommunicator, coordinates, &_cornerNeighbors[LEFT_LOWER]);
+        MPI_Cart_rank(_meshCommunicator, coordinates, &_cornerNeighbors[LEFT_LOWER]);
     }
     else
     {
@@ -437,16 +471,16 @@ void LifeSimulation::constructGridTopology()
     }
 }
 
-void LifeSimulation::destructGridTopology()
+void LifeSimulation::destructMeshTopology()
 {
     if (_subWorldCommunicator != MPI_COMM_NULL)
     {
         MPI_Comm_free(&_subWorldCommunicator);
     }
 
-    if (_gridCommunicator != MPI_COMM_NULL)
+    if (_meshCommunicator != MPI_COMM_NULL)
     {
-        MPI_Comm_free(&_gridCommunicator);
+        MPI_Comm_free(&_meshCommunicator);
     }
 }
 
@@ -479,7 +513,7 @@ void LifeSimulation::readInputFile()
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
 
-        // adjust the dimensions of the grid to be divisible by the number of nodes in the grid and add additional padding if specified
+        // adjust the dimensions of the grid to be divisible by the number of nodes in the mesh and add additional padding if specified
         _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.padding) / 
                                  _settings.nodesWidthCount) * _settings.nodesWidthCount;
         _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.padding) / 
@@ -507,6 +541,22 @@ void LifeSimulation::readInputFile()
         _settings.localTileSizeWithHaloZones = _settings.localHeightWithHaloZones * _settings.localWidthWithHaloZones;
         int rowPadding = (_settings.globalWidth - _settings.globalNotPaddedWidth) >> 1;
         int colPadding = (_settings.globalHeight - _settings.globalNotPaddedHeight) >> 1;
+
+        if (false)
+        {
+            cerr << "Number of iterations: " << _arguments.numberOfIterations << endl;
+            cerr << "globalHeight: " << _settings.globalHeight << endl;
+            cerr << "globalWidth: " << _settings.globalWidth << endl;
+            cerr << "globalNotPaddedHeight: " << _settings.globalNotPaddedHeight << endl;
+            cerr << "globalNotPaddedWidth: " << _settings.globalNotPaddedWidth << endl;
+            cerr << "localHeight: " << _settings.localHeight << endl;
+            cerr << "localWidth: " << _settings.localWidth << endl;
+            cerr << "localHeightWithHaloZones: " << _settings.localHeightWithHaloZones << endl;
+            cerr << "localWidthWithHaloZones: " << _settings.localWidthWithHaloZones << endl;
+            cerr << "nodesHeightCount: " << _settings.nodesHeightCount << endl;
+            cerr << "nodesWidthCount: " << _settings.nodesWidthCount << endl;
+            cerr << "nodesTotalCount: " << _settings.nodesTotalCount << endl;
+        }
 
         _globalTile = static_cast<cell_t *>(aligned_alloc(64, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t)));
         if (_globalTile == nullptr)
@@ -673,9 +723,9 @@ void LifeSimulation::destructGridTiles()
 
 void LifeSimulation::exchangeInitialData()
 {
-    // partition the global tile into local tiles and scatter them to all processes in the grid
+    // partition the global tile into local tiles and scatter them to all processes in the mesh
     MPI_Scatterv(_globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), _tileResizedType, 
-                 _nextTile, 1, _tileWithHaloZonesType, ROOT, _gridCommunicator);
+                 _nextTile, 1, _tileWithHaloZonesType, ROOT, _meshCommunicator);
     // perform the initial exchange of halo zones
     startHaloZonesExchange();
     // wait for the initial exchange of halo zones to finish
@@ -689,9 +739,9 @@ void LifeSimulation::startHaloZonesExchange()
     if (_cornerNeighbors[LEFT_UPPER] != MPI_PROC_NULL)
     {
         MPI_Isend(_nextTile + _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], 0, 
-                  _gridCommunicator, &_cornerSendRequests[LEFT_UPPER]);
+                  _meshCommunicator, &_cornerSendRequests[LEFT_UPPER]);
         MPI_Irecv(_nextTile, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], 0, 
-                  _gridCommunicator, &_cornerRecvRequests[LEFT_UPPER]);
+                  _meshCommunicator, &_cornerRecvRequests[LEFT_UPPER]);
     }
     else
     {
@@ -702,9 +752,9 @@ void LifeSimulation::startHaloZonesExchange()
     if (_cornerNeighbors[RIGHT_UPPER] != MPI_PROC_NULL)
     {
         MPI_Isend(_nextTile +  2 * _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], 0, 
-                  _gridCommunicator, &_cornerSendRequests[RIGHT_UPPER]);
+                  _meshCommunicator, &_cornerSendRequests[RIGHT_UPPER]);
         MPI_Irecv(_nextTile + _settings.localWidthWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_UPPER], 0, 
-                  _gridCommunicator, &_cornerRecvRequests[RIGHT_UPPER]);
+                  _meshCommunicator, &_cornerRecvRequests[RIGHT_UPPER]);
     }
     else
     {
@@ -715,9 +765,9 @@ void LifeSimulation::startHaloZonesExchange()
     if (_cornerNeighbors[RIGHT_LOWER] != MPI_PROC_NULL)
     {
         MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones - 2, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], 0, 
-                  _gridCommunicator, &_cornerSendRequests[RIGHT_LOWER]);
+                  _meshCommunicator, &_cornerSendRequests[RIGHT_LOWER]);
         MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - 1, 1, MPI_BYTE, _cornerNeighbors[RIGHT_LOWER], 0,
-                  _gridCommunicator, &_cornerRecvRequests[RIGHT_LOWER]);
+                  _meshCommunicator, &_cornerRecvRequests[RIGHT_LOWER]);
     }
     else
     {
@@ -728,9 +778,9 @@ void LifeSimulation::startHaloZonesExchange()
     if (_cornerNeighbors[LEFT_LOWER] != MPI_PROC_NULL)
     {
         MPI_Isend(_nextTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], 0, 
-                  _gridCommunicator, &_cornerSendRequests[LEFT_LOWER]);
+                  _meshCommunicator, &_cornerSendRequests[LEFT_LOWER]);
         MPI_Irecv(_nextTile + _settings.localTileSizeWithHaloZones - _settings.localWidthWithHaloZones, 1, MPI_BYTE, _cornerNeighbors[LEFT_LOWER], 0,
-                  _gridCommunicator, &_cornerRecvRequests[LEFT_LOWER]);
+                  _meshCommunicator, &_cornerRecvRequests[LEFT_LOWER]);
     }
     else
     {
@@ -739,7 +789,7 @@ void LifeSimulation::startHaloZonesExchange()
     }
 
     MPI_Ineighbor_alltoallw(_nextTile, _neighbourCounts, _neighbourDisplacements, _sendHaloZoneTypes, _nextTile, 
-                            _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _gridCommunicator, &_haloZoneRequest);
+                            _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _meshCommunicator, &_haloZoneRequest);
 }
 
 void LifeSimulation::awaitHaloZonesExchange()
@@ -829,17 +879,17 @@ void LifeSimulation::collectResults()
 {
     // gather the local tiles into the global tile
     MPI_Gatherv(_currentTile, 1, _tileWithHaloZonesType, _globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), 
-                _tileResizedType, ROOT, _gridCommunicator);
+                _tileResizedType, ROOT, _meshCommunicator);
 }
 
 void LifeSimulation::debugPrintLocalTile(bool current = true)
 {
     cell_t *tile = current ? _currentTile : _nextTile;
-    for (int node = 0; node < _gridSize; node++)
+    for (int node = 0; node < _meshSize; node++)
     {
-        if (_gridRank == node)
+        if (_meshRank == node)
         {
-            cerr << "Rank: " << _gridRank << "\n";
+            cerr << "Rank: " << _meshRank << "\n";
             for (int i = 0; i < _settings.localHeightWithHaloZones; i++)
             {
                 for (int j = 0; j < _settings.localWidthWithHaloZones; j++)
@@ -859,7 +909,7 @@ void LifeSimulation::debugPrintLocalTile(bool current = true)
             }
             cerr << endl;
         }
-        MPI_Barrier(_gridCommunicator);
+        MPI_Barrier(_meshCommunicator);
     }
 }
 
@@ -883,16 +933,17 @@ void LifeSimulation::prettyPrintGlobalTile()
     auto fillInProcessId = [](int processId, string &target)
     {
         string processIdStr = to_string(processId);
+
+        // find the middle of the target string
         size_t processIdLength = processIdStr.length();
         size_t halfTargetLength = (target.length() + 1) >> 1;
         size_t startIdx = halfTargetLength - ((processIdLength + 1) >> 1);
 
-        target[startIdx - 1] = ' ';
-        for (size_t i = 0; i < processIdLength; i++)
+        // fill in the process id to the target string
+        for (size_t i = 0; i < processIdLength && i < target.length(); i++)
         {
             target[startIdx + i] = processIdStr[i];
         }
-        target[startIdx + processIdLength] = ' ';
     };
 
     if (_worldRank == ROOT)
@@ -940,22 +991,6 @@ void LifeSimulation::run()
     if (!isActiveProcess()) // idle processes do not participate in the simulation
     {
         return;
-    }
-
-    if (_worldRank == ROOT && false)
-    {
-        cerr << "Number of iterations: " << _arguments.numberOfIterations << endl;
-        cerr << "globalHeight: " << _settings.globalHeight << endl;
-        cerr << "globalWidth: " << _settings.globalWidth << endl;
-        cerr << "globalNotPaddedHeight: " << _settings.globalNotPaddedHeight << endl;
-        cerr << "globalNotPaddedWidth: " << _settings.globalNotPaddedWidth << endl;
-        cerr << "localHeight: " << _settings.localHeight << endl;
-        cerr << "localWidth: " << _settings.localWidth << endl;
-        cerr << "localHeightWithHaloZones: " << _settings.localHeightWithHaloZones << endl;
-        cerr << "localWidthWithHaloZones: " << _settings.localWidthWithHaloZones << endl;
-        cerr << "nodesHeightCount: " << _settings.nodesHeightCount << endl;
-        cerr << "nodesWidthCount: " << _settings.nodesWidthCount << endl;
-        cerr << "nodesTotalCount: " << _settings.nodesTotalCount << endl;
     }
 
     exchangeInitialData();
