@@ -10,3 +10,9 @@ CPP_SRC = $(wildcard $(PROJECT_DIR)/*.cpp)
 
 all:
 	$(CC) $(CFLAGS) $(CPP_SRC) -o $(PROJECT_DIR)/life
+
+test:
+	$(CC) $(CFLAGS) $(CPP_SRC) -DTEST_PRINT -o $(PROJECT_DIR)/life_test
+
+clean: 
+	rm -f $(PROJECT_DIR)/life $(PROJECT_DIR)/life_test
