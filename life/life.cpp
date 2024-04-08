@@ -59,22 +59,81 @@ public:
     void run();
 
 private:
+    /**
+     * @brief Parses the command line arguments.
+     * @param argc Number of arguments (after being stripped by MPI_Initialize).
+     * @param argv Array of arguments (after being stripped by MPI_Initialize).
+     */
     void parseArguments(int argc, char **argv);
+
+    /**
+     * @brief Constructs a 2D mesh topology. The dimensions can be user specified via arguments or derived automatically from the number of processes.
+     */
     void constructMeshTopology();
+
+    /**
+     * @brief Destructs the 2D mesh topology.
+     */
     void destructMeshTopology();
+
+    /**
+     * @brief Reads the input file and constructs the global grid.
+     */
     void readInputFile();
+
+    /**
+     * @brief Constructs MPI data types for the local tile, tile with halo zones, and halo zones.
+     */
     void constructDataTypes();
+
+    /**
+     * @brief Destructs MPI data types.
+     */
     void destructDataTypes();
+
+    /**
+     * @brief Allocates local tiles, private to each process.
+     */
     void constructGridTiles();
+
+    /**
+     * @brief Deallocates local tiles.
+     */
     void destructGridTiles();
 
+    /**
+     * @brief Exchanges the initial data, i.e. scatters the global grid to the local tiles of all processes and performs the initial halo zone exchange.
+     */
     void exchangeInitialData();
-    void startHaloZonesExchange();
-    void awaitHaloZonesExchange();
-    void computeHaloZones();
-    void computeTile();
-    void collectResults();
 
+    /**
+     * @brief Starts the non-blocking exchange of halo zones.
+     */
+    void startHaloZonesExchange();
+
+    /**
+     * @brief Awaits the completion of the non-blocking exchange of halo zones.
+     */
+    void awaitHaloZonesExchange();
+
+    /**
+     * @brief Computes the next state of the simulation in the edges of the local tile.
+     */
+    void computeHaloZones();
+
+    /**
+     * @brief Computes the next state of the simulation in the inner part of the local tile.
+     */
+    void computeTile();
+
+    /**
+     * @brief Gathers the current state of the simulation from all processes to the root process.
+     */
+    void collectLocalTiles();
+
+    /**
+     * @brief Updates the state of a cell based on the states of its neighbors.
+     */
     #pragma omp declare simd
     inline constexpr cell_t updateCell
     (
@@ -87,8 +146,19 @@ private:
         return (center && ((sum == 2) || (sum == 3))) || (!center && (sum == 3));
     }
 
+    /**
+     * @brief Prints local tiles in the order of ranks, separating each rank with a barrier call.
+     */
     void debugPrintLocalTile(bool current);
+
+    /**
+     * @brief Prints the unformatted global grid to stderr, living cells represented by '1', dead cells by '0'.
+     */
     void testPrintGlobalTile();
+
+    /**
+     * @brief Prints the global grid in a table-like format.
+     */
     void prettyPrintGlobalTile();
     void generateImagePBM();
     void printFFMPEGCommand();
@@ -1085,7 +1155,7 @@ void LifeSimulation::computeTile()
     }
 }
 
-void LifeSimulation::collectResults()
+void LifeSimulation::collectLocalTiles()
 {
     // gather the local tiles into the global tile
     MPI_Gatherv(_currentTile, 1, _tileWithHaloZonesType, _globalTile, _scatterGatherCounts.data(), _scatterGatherDisplacements.data(), 
@@ -1201,7 +1271,7 @@ void LifeSimulation::generateImagePBM()
 {
     if (_settings.generateImages)
     {
-        collectResults();
+        collectLocalTiles();
         if (_worldRank == ROOT)
         {
             string imageFileName = _arguments.outputImageDirectoryName + to_string(_imageCounter) + ".pbm";
@@ -1295,7 +1365,7 @@ void LifeSimulation::run()
         swap(_currentTile, _nextTile);
     }
     
-    collectResults();
+    collectLocalTiles();
     #ifdef TEST_PRINT
         testPrintGlobalTile();
     #endif
