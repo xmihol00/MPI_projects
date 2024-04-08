@@ -13,7 +13,7 @@
 //    mesh will not be utilized. Lastly, each process in the mesh retrieves ranks of its neighbors, especially of its corner neighbors (NW, NE, SE, SW).
 // 2. The input file is read only by the root process. Based on the size of the input file and the length of the first row, the global grid dimensions, 
 //    i.e. the simulation space, are determined. The global grid dimensions are adjusted to be divisible by the number of nodes in each dimension of the
-//    mesh. The content of the file is then read to the global grid with evenly distributed padding of '0' if necessary or as specified by the user.
+//    mesh. The content of the file is then placed to the left upper corner of the global grid. The rest is padded with zeros.
 // 3. The root process computes the sizes of local tiles, i.e. the parts of the global grid assigned to each process, and broadcasts this information to
 //    all the processes.
 // 4. Each process creates MPI data types specifying its local tile, the tile with halo zones (edges of the local tiles of neighboring processes, which 
@@ -90,6 +90,9 @@ private:
     void debugPrintLocalTile(bool current);
     void testPrintGlobalTile();
     void prettyPrintGlobalTile();
+    void generateImagePBM();
+    void printFFMPEGCommand();
+    void generateVideoFFMPEG();
 
     enum { NORTH = 0, SOUTH, WEST, EAST };
     enum { LEFT_UPPER = 0, RIGHT_UPPER, RIGHT_LOWER, LEFT_LOWER };
@@ -110,9 +113,17 @@ private:
         int padding = 0;
         int paddingHeight = 0;
         int paddingWidth = 0;
+        int paddingTop = 0;
+        int paddingBottom = 0;
+        int paddingLeft = 0;
+        int paddingRight = 0;
         bool wraparound = false;
         int nodesHeightCount = 0;
         int nodesWidthCount = 0;
+        int pixelsPerCell = 10;
+        int fps = 4;
+        string outputImageDirectoryName;
+        string videoFileName;
     } _arguments;
 
     struct Settings
@@ -130,6 +141,9 @@ private:
         int nodesHeightCount;
         int nodesWidthCount;
         int nodesTotalCount;
+        bool generateImages = false;
+        bool generateOnlyVideo = false;
+        bool generateVideo = false;
     } _settings;
 
     MPI_Datatype _tileType;
@@ -156,6 +170,8 @@ private:
     cell_t *_currentTile = nullptr;
     cell_t *_nextTile = nullptr;
 
+    int _imageCounter = 0;
+
     inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
 
     inline constexpr bool isTopRow()      { return _neighbors[NORTH] == MPI_PROC_NULL; };
@@ -171,10 +187,10 @@ private:
 
 LifeSimulation::LifeSimulation(int argc, char **argv)
 {
-    parseArguments(argc, argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &_worldRank);
     MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
 
+    parseArguments(argc, argv);
     constructMeshTopology();
     readInputFile();
 
@@ -197,6 +213,8 @@ LifeSimulation::~LifeSimulation()
 
 void LifeSimulation::parseArguments(int argc, char **argv)
 {
+    int unused; // to suppress unused return value warning
+
     // lambda function for printing an error message when a required argument is missing
     auto missingArgumentError = [&](const string &name)
     {
@@ -334,8 +352,24 @@ void LifeSimulation::parseArguments(int argc, char **argv)
             {
                 _arguments.paddingWidth = _arguments.padding;
             }
+            if (_arguments.paddingTop == 0)
+            {
+                _arguments.paddingTop = _arguments.padding;
+            }
+            if (_arguments.paddingBottom == 0)
+            {
+                _arguments.paddingBottom = _arguments.padding;
+            }
+            if (_arguments.paddingLeft == 0)
+            {
+                _arguments.paddingLeft = _arguments.padding;
+            }
+            if (_arguments.paddingRight == 0)
+            {
+                _arguments.paddingRight = _arguments.padding;
+            }
         }
-        else if (*iterator == "px" || *iterator == "--padding_x")
+        else if (*iterator == "-px" || *iterator == "--padding_x")
         {
             iterator++;
             if (iterator == arguments.end())
@@ -344,8 +378,18 @@ void LifeSimulation::parseArguments(int argc, char **argv)
             }
 
             _arguments.paddingWidth = parseInt(*iterator, *lastIterator);
+
+            // write-through the padding also to the specific paddings if not specified yet
+            if (_arguments.paddingLeft == 0)
+            {
+                _arguments.paddingLeft = _arguments.paddingWidth;
+            }
+            if (_arguments.paddingRight == 0)
+            {
+                _arguments.paddingRight = _arguments.paddingWidth;
+            }
         }
-        else if (*iterator == "py" || *iterator == "--padding_y")
+        else if (*iterator == "-py" || *iterator == "--padding_y")
         {
             iterator++;
             if (iterator == arguments.end())
@@ -354,6 +398,123 @@ void LifeSimulation::parseArguments(int argc, char **argv)
             }
 
             _arguments.paddingHeight = parseInt(*iterator, *lastIterator);
+
+            // write-through the padding also to the specific paddings if not specified yet
+            if (_arguments.paddingTop == 0)
+            {
+                _arguments.paddingTop = _arguments.paddingHeight;
+            }
+            if (_arguments.paddingBottom == 0)
+            {
+                _arguments.paddingBottom = _arguments.paddingHeight;
+            }
+        }
+        else if (*iterator == "-pt" || *iterator == "--padding_top")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingTop = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "-pb" || *iterator == "--padding_bottom")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingBottom = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "-pl" || *iterator == "--padding_left")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingLeft = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "-pr" || *iterator == "--padding_right")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.paddingRight = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "-ppc" || *iterator == "--pixels_per_cell")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.pixelsPerCell = parseInt(*iterator, *lastIterator);
+        }
+        else if (*iterator == "-iod" || *iterator == "--images_output_directory")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.outputImageDirectoryName = *iterator;
+            if (_arguments.outputImageDirectoryName.back() != '/')
+            {
+                _arguments.outputImageDirectoryName += '/';
+            }
+
+            if (_worldRank == ROOT)
+            {
+                unused = system(("mkdir -p " + _arguments.outputImageDirectoryName).c_str());
+                (void)unused; // suppress unused warning
+            }
+
+            _settings.generateImages = true;
+            _settings.generateOnlyVideo = false;
+        }
+        else if (*iterator == "-v" || *iterator == "--video")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.videoFileName = *iterator;
+            _settings.generateVideo = true;
+
+            if (!_settings.generateImages)
+            {
+                _arguments.outputImageDirectoryName = "/tmp/life_images/";
+                if (_worldRank == ROOT)
+                {
+                    unused = system(("mkdir -p " + _arguments.outputImageDirectoryName).c_str());
+                    unused = system(("rm -f " + _arguments.outputImageDirectoryName + "*.pbm").c_str());
+                    (void)unused; // suppress unused warning
+                }
+                _settings.generateImages = true;
+                _settings.generateOnlyVideo = true;
+            }
+        }
+        else if (*iterator == "-fps" || *iterator == "--frames_per_second")
+        {
+            iterator++;
+            if (iterator == arguments.end())
+            {
+                missingArgumentError(*lastIterator);
+            }
+
+            _arguments.fps = parseInt(*iterator, *lastIterator);
         }
         else
         {
@@ -554,22 +715,23 @@ void LifeSimulation::readInputFile()
         }
 
         // adjust the dimensions of the grid to be divisible by the number of nodes in the mesh, also add additional padding if specified
-        _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + 2 * _arguments.paddingWidth) / 
+        _settings.globalWidth = ((_settings.globalNotPaddedWidth + _settings.nodesWidthCount - 1 + _arguments.paddingLeft + _arguments.paddingRight) / 
                                  _settings.nodesWidthCount) * _settings.nodesWidthCount;
-        _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + 2 * _arguments.paddingHeight) / 
+        _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + _arguments.paddingTop + _arguments.paddingBottom) / 
                                   _settings.nodesHeightCount) * _settings.nodesHeightCount;
         
-        if (_settings.globalWidth != _settings.globalNotPaddedWidth + 2 * _arguments.padding)
+        if (_settings.globalWidth != _settings.globalNotPaddedWidth + _arguments.paddingLeft + _arguments.paddingRight)
         {
             cerr << "Warning: The input file X dimension (width) of " << _settings.globalNotPaddedWidth 
-                 << (_arguments.paddingWidth ? " with the additional padding " : " ") 
+                 << (_arguments.paddingLeft || _arguments.paddingRight ? " with the additional padding " : " ") 
                  << "is not divisible by the X decomposition dimension." << endl;
             cerr << "         The grid X dimension will be extended to " << _settings.globalWidth << "." << endl;
         }
-        if (_settings.globalHeight != _settings.globalNotPaddedHeight + 2 * _arguments.padding)
+        if (_settings.globalHeight != _settings.globalNotPaddedHeight + _arguments.paddingTop + _arguments.paddingBottom)
         {
             cerr << "Warning: The input file Y dimension (height) of " << _settings.globalNotPaddedHeight 
-                 << (_arguments.paddingHeight ? " with the additional padding " : " ") << "is not divisible by the Y decomposition dimension." << endl;
+                 << (_arguments.paddingTop || _arguments.paddingBottom ? " with the additional padding " : " ") 
+                 << "is not divisible by the Y decomposition dimension." << endl;
             cerr << "         The grid Y dimension will be extended to " << _settings.globalHeight << "." << endl;
         }
         
@@ -581,8 +743,9 @@ void LifeSimulation::readInputFile()
         _settings.localTileSizeWithHaloZones = _settings.localHeightWithHaloZones * _settings.localWidthWithHaloZones;
 
         // offsets in the global grid of the read data
-        int rowPadding = (_settings.globalWidth - _settings.globalNotPaddedWidth) >> 1;
-        int colPadding = (_settings.globalHeight - _settings.globalNotPaddedHeight) >> 1;
+        int rowLeftPadding = _arguments.paddingLeft;
+        int rowRightPadding = _settings.globalWidth - _settings.globalNotPaddedWidth - rowLeftPadding;
+        int colTopPadding = _arguments.paddingTop;
 
         #ifdef DEBUG_PRINT
             cerr << "Number of iterations:     " << _arguments.numberOfIterations << endl;
@@ -609,10 +772,10 @@ void LifeSimulation::readInputFile()
         memset(_globalTile, 0, _settings.globalHeight * _settings.globalWidth * sizeof(cell_t));
 
         int readLines = 0;
-        int idx = colPadding * _settings.globalWidth;
+        int idx = colTopPadding * _settings.globalWidth;
         do
         {
-            idx += rowPadding;
+            idx += rowLeftPadding;
             if (row.length() != static_cast<size_t>(_settings.globalNotPaddedWidth)) // unexpected row length
             {
                 cerr << "Error: The input file must contain a rectangular grid of '1' and '0' characters." << endl;
@@ -624,7 +787,7 @@ void LifeSimulation::readInputFile()
             {
                 _globalTile[idx++] = c == '1'; // consider all non-'1' characters as '0'
             }
-            idx += rowPadding;
+            idx += rowRightPadding;
         }
         while (getline(inputFile, row));
 
@@ -1034,6 +1197,81 @@ void LifeSimulation::prettyPrintGlobalTile()
     }
 }
 
+void LifeSimulation::generateImagePBM()
+{
+    if (_settings.generateImages)
+    {
+        collectResults();
+        if (_worldRank == ROOT)
+        {
+            string imageFileName = _arguments.outputImageDirectoryName + to_string(_imageCounter) + ".pbm";
+            ofstream outputFile(imageFileName, ios::out);
+            if (!outputFile.is_open())
+            {
+                return;
+            }
+            _imageCounter++;
+
+            int imageWidth = _settings.globalWidth * _arguments.pixelsPerCell;
+            int imageHeight = _settings.globalHeight * _arguments.pixelsPerCell;
+            outputFile << "P1" << endl;
+            outputFile << imageWidth << " " << imageHeight << endl;
+
+            string row;
+            row.resize(imageWidth);
+            for (int i = 0; i < _settings.globalHeight; i++)
+            {
+                for (int j = 0; j < _settings.globalWidth; j++)
+                {
+                    for (int k = 0; k < _arguments.pixelsPerCell; k++)
+                    {
+                        row[j * _arguments.pixelsPerCell + k] = _globalTile[i * _settings.globalWidth + j] ? '1' : '0';
+                    }
+                }
+
+                for (int k = 0; k < _arguments.pixelsPerCell; k++)
+                {
+                    outputFile << row << endl;
+                }
+            }
+        }
+    }
+}
+
+void LifeSimulation::printFFMPEGCommand()
+{
+    if (_worldRank == ROOT && _settings.generateImages && !_settings.generateVideo)
+    {
+        string outputVideoName = _arguments.outputImageDirectoryName;
+        outputVideoName.back() = '.'; // replace '/' with '.'
+        outputVideoName += "mp4";
+        cerr << "To generate a video from the images, run the following command:" << endl;
+        cerr << "ffmpeg -framerate 4 -i " << _arguments.outputImageDirectoryName << "%d.pbm " << outputVideoName << endl;  
+    }
+}
+
+void LifeSimulation::generateVideoFFMPEG()
+{
+    if (_worldRank == ROOT && _settings.generateVideo)
+    {
+        string ffmpegCommand = "ffmpeg -y -framerate " + to_string(_arguments.fps) + " -i " + _arguments.outputImageDirectoryName + "%d.pbm " + 
+                               _arguments.videoFileName + ">/dev/null 2>&1";
+        int result = system(ffmpegCommand.c_str());
+        if (result != 0)
+        {
+            cerr << "Error: Unable to generate video from collected frames to '" << _arguments.videoFileName << "'.\n";
+            cerr << "       Check if you have 'ffmpeg' installed (https://ffmpeg.org)." << endl;
+        }
+
+        if (!_settings.generateImages)
+        {
+            string removeTemporaryFiles = "rm -rf " + _arguments.outputImageDirectoryName;
+            int unused = system(removeTemporaryFiles.c_str());
+            (void)unused; // suppress unused variable warning
+        }
+    }
+}
+
 void LifeSimulation::run()
 {
     if (!isActiveProcess()) // idle processes do not participate in the simulation
@@ -1044,12 +1282,15 @@ void LifeSimulation::run()
     exchangeInitialData();
 
     // simulation loop
+    // TODO: use size_t for iterations
     for (int iteration = 0; iteration < _arguments.numberOfIterations; iteration++)
     {   
         computeHaloZones();
         startHaloZonesExchange();
         computeTile();
         awaitHaloZonesExchange();
+
+        generateImagePBM();
 
         swap(_currentTile, _nextTile);
     }
@@ -1059,6 +1300,9 @@ void LifeSimulation::run()
         testPrintGlobalTile();
     #endif
     prettyPrintGlobalTile();
+
+    generateVideoFFMPEG();
+    printFFMPEGCommand();
 }
 
 int main(int argc, char **argv)
