@@ -47,4 +47,5 @@ input.txt
 life
 !life/
 life/life_test
+life/life_debug
 *.pbm

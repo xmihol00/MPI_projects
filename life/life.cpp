@@ -1,5 +1,5 @@
 // =======================================================================================================================================================
-// Algorithm:   Game of Life simulation
+// Algorithm:   John Conway's Game of Life simulation
 // Author:      David Mihola
 // E-mail:      xmihol00@stud.fit.vutbr.cz
 // Date:        1. 4. 2024
@@ -54,8 +54,21 @@ using cell_t = uint8_t;
 class LifeSimulation
 {
 public:
+    /**
+     * @brief Constructs the LifeSimulation object based on the user specified arguments.
+     * @param argc Number of arguments (after being stripped by MPI_Initialize).
+     * @param argv Array of arguments (after being stripped by MPI_Initialize).
+     */
     LifeSimulation(int argc, char **argv);
+
+    /**
+     * @brief Destructs the LifeSimulation object. Must be called before the MPI_Finalize, i.e use RAII correctly.
+     */
     ~LifeSimulation();
+
+    /**
+     * @brief Runs the John Conway's Game of Life simulation.
+     */
     void run();
 
 private:
@@ -134,17 +147,12 @@ private:
     /**
      * @brief Updates the state of a cell based on the states of its neighbors.
      */
-    #pragma omp declare simd
     inline constexpr cell_t updateCell
     (
-        cell_t leftUpperCorner, cell_t upper, cell_t rightUpperCorner, 
-        cell_t left, cell_t center, cell_t right, 
-        cell_t leftLowerCorner, cell_t lower, cell_t rightLowerCorner
-    )
-    {
-        int sum = leftUpperCorner + upper + rightUpperCorner + left + right + leftLowerCorner + lower + rightLowerCorner;
-        return (center && ((sum == 2) || (sum == 3))) || (!center && (sum == 3));
-    }
+        cell_t northWest, cell_t north,  cell_t northEast, 
+        cell_t west,      cell_t center, cell_t east, 
+        cell_t southWest, cell_t south,  cell_t southEast
+    );
 
     /**
      * @brief Prints local tiles in the order of ranks, separating each rank with a barrier call.
@@ -152,96 +160,122 @@ private:
     void debugPrintLocalTile(bool current);
 
     /**
-     * @brief Prints the unformatted global grid to stderr, living cells represented by '1', dead cells by '0'.
+     * @brief Prints the unformatted global grid to stderr, living cells represented by '1', dead cells by '0', i.e. the global grid buffer is dumped in ASCII.
      */
-    void testPrintGlobalTile();
+    void stderrPrintGlobalTile();
 
     /**
-     * @brief Prints the global grid in a table-like format.
+     * @brief Prints the global grid in a table-like format, where the table header contains coordinates of the utilized processes in the 2D mesh.
      */
     void prettyPrintGlobalTile();
+
+    /**
+     * @brief Generates an image of the current state of the simulation the PBM format.
+     */
     void generateImagePBM();
+
+    /**
+     * @brief Prints a FFMPEG command to stderr for generating a video from generated images.
+     */
     void printFFMPEGCommand();
+
+    /**
+     * @brief Generates a video of the simulation using FFMPEG.
+     */
     void generateVideoFFMPEG();
 
-    enum { NORTH = 0, SOUTH, WEST, EAST };
-    enum { LEFT_UPPER = 0, RIGHT_UPPER, RIGHT_LOWER, LEFT_LOWER };
-    static constexpr int ROOT = 0;
+    enum { NORTH = 0, SOUTH, WEST, EAST };                         ///< Directions in the 2D mesh.
+    enum { LEFT_UPPER = 0, RIGHT_UPPER, RIGHT_LOWER, LEFT_LOWER }; ///< Corner neighbors of a process in the 2D mesh.
+    static constexpr int ROOT = 0;                                 ///< Rank of the root process.
+    static constexpr int NEIGHBOR_COUNT = 4;                       ///< Number of neighbors of a process in the 2D mesh.
 
-    MPI_Comm _subWorldCommunicator;
-    MPI_Comm _meshCommunicator;
+    MPI_Comm _subWorldCommunicator; ///< Communicator containing only the processes that will take part in the simulation.
+    MPI_Comm _meshCommunicator;     ///< Communicator containing the processes organized in a 2D mesh topology.
 
-    int _worldRank;
-    int _worldSize;
-    int _meshSize;
-    int _meshRank;
+    int _worldRank; ///< Rank of the current process in MPI_COMM_WORLD.
+    int _worldSize; ///< Number of processes in MPI_COMM_WORLD.
+    int _meshSize;  ///< Number of processes in the mesh communicator.
+    int _meshRank;  ///< Rank of the current process in the mesh communicator.
 
+    /**
+     * @brief Structure containing the arguments of the simulation specified by user.
+     */
     struct Arguments
     {
-        string inputFileName;
-        int numberOfIterations;
-        int padding = 0;
-        int paddingHeight = 0;
-        int paddingWidth = 0;
-        int paddingTop = 0;
-        int paddingBottom = 0;
-        int paddingLeft = 0;
-        int paddingRight = 0;
-        bool wraparound = false;
-        int nodesHeightCount = 0;
-        int nodesWidthCount = 0;
-        int pixelsPerCell = 10;
-        int fps = 4;
-        string outputImageDirectoryName;
-        string videoFileName;
+        string inputFileName;             ///< Name of the input file containing the initial state of the simulation, must be user specified.
+        int numberOfIterations;           ///< Number of iterations of the simulation, must be user specified.
+        int padding = 0;                  ///< Padding of the global grid in all directions.
+        int paddingHeight = 0;            ///< Padding of the global grid in the Y direction.
+        int paddingWidth = 0;             ///< Padding of the global grid in the X direction.
+        int paddingTop = 0;               ///< Padding of the global grid from the top.
+        int paddingBottom = 0;            ///< Padding of the global grid from the bottom.
+        int paddingLeft = 0;              ///< Padding of the global grid from the left.
+        int paddingRight = 0;             ///< Padding of the global grid from the right;
+        bool wraparound = false;          ///< Use wrapped around simulation.
+        int nodesHeightCount = 0;         ///< Number of nodes (processes) in the Y direction of the mesh topology.
+        int nodesWidthCount = 0;          ///< Number of nodes (processes) in the X direction of the mesh topology.
+        int pixelsPerCell = 10;           ///< Number of pixels per cell in the generated images/video.
+        int fps = 4;                      ///< Frames per second in the generated video.
+        string outputImageDirectoryName;  ///< Directory where generated images will be stored to.
+        string videoFileName;             ///< Name of the generated video file.
+        bool formattedPrint = true;       ///< Print the global grid in a table-like format.
+        #ifdef _TEST_PRINT_
+            bool stderrPrint = true;      
+        #else
+            bool stderrPrint = false;     ///< Print the unformatted global grid to stderr.
+        #endif
     } _arguments;
 
+    /**
+     * @brief Structure containing the settings of the simulation.
+     */
     struct Settings
     {
-        int globalHeight;
-        int globalWidth;
-        int globalNotPaddedHeight;
-        int globalNotPaddedWidth;
-        int localHeight;
-        int localWidth;
-        int localHeightWithHaloZones;
-        int localWidthWithHaloZones;
-        int localTileSize;
-        int localTileSizeWithHaloZones;
-        int nodesHeightCount;
-        int nodesWidthCount;
-        int nodesTotalCount;
-        bool generateImages = false;
-        bool generateOnlyVideo = false;
-        bool generateVideo = false;
+        int globalHeight;                   ///< Height of the global grid.
+        int globalWidth;                    ///< Width of the global grid.
+        int globalNotPaddedHeight;          ///< Height of the global grid without padding.
+        int globalNotPaddedWidth;           ///< Width of the global grid without padding.
+        int localHeight;                    ///< Height of the local tile without halo zones.
+        int localWidth;                     ///< Width of the local tile without halo zones.
+        int localHeightWithHaloZones;       ///< Height of the local tile with halo zones.
+        int localWidthWithHaloZones;        ///< Width of the local tile with halo zones.
+        int localTileSize;                  ///< Size of the local tile without halo zones.
+        int localTileSizeWithHaloZones;     ///< Size of the local tile with halo zones.
+        int nodesHeightCount;               ///< Number of nodes (processes) in the Y direction of the mesh topology.
+        int nodesWidthCount;                ///< Number of nodes (processes) in the X direction of the mesh topology.
+        int nodesTotalCount;                ///< Total number of nodes (processes) in the mesh topology.
+        bool generateImages = false;        ///< Generate images of each step of the simulation.
+        bool generateOnlyVideo = false;     ///< Generate only a video of the simulation.
+        bool generateVideo = false;         ///< Generate a video of the simulation.
     } _settings;
 
-    MPI_Datatype _tileType;
-    MPI_Datatype _tileResizedType;
-    MPI_Datatype _tileWithHaloZonesType;
+    MPI_Datatype _tileType;              ///< MPI data type for the local tile.
+    MPI_Datatype _tileResizedType;       ///< MPI data type for the local tile resized allowing scatter and gather.
+    MPI_Datatype _tileWithHaloZonesType; ///< MPI data type for the local tile with halo zones.
 
-    MPI_Datatype _sendHaloZoneTypes[4];
-    MPI_Datatype _recvHaloZoneTypes[4];
+    MPI_Datatype _sendHaloZoneTypes[NEIGHBOR_COUNT]; ///< MPI data types for sending halo zones.
+    MPI_Datatype _recvHaloZoneTypes[NEIGHBOR_COUNT]; ///< MPI data types for receiving halo zones.
 
-    vector<int> _scatterGatherCounts;
-    vector<int> _scatterGatherDisplacements;
+    vector<int> _scatterGatherCounts;        ///< Counts of transferred tiles to each process during scatter and gather operations.
+    vector<int> _scatterGatherDisplacements; ///< Displacements of transferred tiles to each process during scatter and gather operations.
 
-    MPI_Request _haloZoneRequest;
+    MPI_Request _haloZoneRequest;                    ///< MPI request for the non-blocking exchange of halo zones.
+    MPI_Request _cornerSendRequests[NEIGHBOR_COUNT]; ///< MPI requests for the non-blocking exchange of corner halo zones.
+    MPI_Request _cornerRecvRequests[NEIGHBOR_COUNT]; ///< MPI requests for the non-blocking exchange of corner halo zones.
 
-    int _neighbors[4];
-    int _cornerNeighbors[4];
-    MPI_Request _cornerSendRequests[4];
-    MPI_Request _cornerRecvRequests[4];
-    int _neighbourCounts[4] = {1, 1, 1, 1};
-    MPI_Aint _neighbourDisplacements[4] = {0, 0, 0, 0};
+    int _neighbors[NEIGHBOR_COUNT];                                  ///< Neighbors of the current process in the 2D mesh.
+    int _cornerNeighbors[NEIGHBOR_COUNT];                            ///< Corner neighbors of the current process in the 2D mesh.
+    int _neighbourCounts[NEIGHBOR_COUNT] = {1, 1, 1, 1};             ///< Counts of corner values to be send to each corner neighbor.
+    MPI_Aint _neighbourDisplacements[NEIGHBOR_COUNT] = {0, 0, 0, 0}; ///< Displacements of corner values to be send to each corner neighbor.
 
-    cell_t *_globalTile = nullptr;
+    cell_t *_globalTile = nullptr;  ///< Global grid containing the whole simulation space (only the root rank allocated this buffer).
     // two tiles for ping-pong buffering and to overlap computation with communication
-    cell_t *_currentTile = nullptr;
-    cell_t *_nextTile = nullptr;
+    cell_t *_currentTile = nullptr; ///< Local tile containing the current state of the simulation.
+    cell_t *_nextTile = nullptr;    ///< Local tile containing the next state of the simulation.
 
-    int _imageCounter = 0;
+    int _imageCounter = 0; ///< Counter of generated images.
 
+    // self-explanatory helper functions
     inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
 
     inline constexpr bool isTopRow()      { return _neighbors[NORTH] == MPI_PROC_NULL; };
@@ -254,6 +288,18 @@ private:
     inline constexpr bool isNotLeftColumn()  { return _neighbors[WEST]  != MPI_PROC_NULL; };
     inline constexpr bool isNotRightColumn() { return _neighbors[EAST]  != MPI_PROC_NULL; };
 };
+
+#pragma omp declare simd
+inline constexpr cell_t LifeSimulation::updateCell
+(
+    cell_t northWest, cell_t north,  cell_t northEast, 
+    cell_t west,      cell_t center, cell_t east, 
+    cell_t southWest, cell_t south,  cell_t southEast
+)
+{
+    int sum = northWest + north + northEast + west + east + southWest + south + southEast; // get the number of living neighbors
+    return (center & ((sum == 2) | (sum == 3))) | (!center & (sum == 3));
+}
 
 LifeSimulation::LifeSimulation(int argc, char **argv)
 {
@@ -586,11 +632,21 @@ void LifeSimulation::parseArguments(int argc, char **argv)
 
             _arguments.fps = parseInt(*iterator, *lastIterator);
         }
+        else if (*iterator == "-nfp" || *iterator == "--no_formatted_print")
+        {
+            _arguments.formattedPrint = false;
+        }
+        else if (*iterator == "-ep" || *iterator == "--stderr_print")
+        {
+            _arguments.stderrPrint = true;
+        }
         else
         {
             if (_worldRank == ROOT)
             {
-                cerr << "Warning: Unknown switch '" << *iterator << "'." << endl;
+                #ifndef _TEST_PRINT_
+                    cerr << "Warning: Unknown switch '" << *iterator << "'." << endl;
+                #endif
             }
         }
     }
@@ -608,7 +664,7 @@ void LifeSimulation::constructMeshTopology()
             _settings.nodesWidthCount = 1 << ((msbPosition >> 1) + 1); // twice as much nodes in the x direction
             _settings.nodesHeightCount = 1 << (msbPosition >> 1);
         }
-        else
+        else // msb is even
         {
             // count of nodes is same in both dimensions
             _settings.nodesWidthCount = 1 << (msbPosition >> 1);
@@ -646,7 +702,9 @@ void LifeSimulation::constructMeshTopology()
     int color = _worldRank >= _settings.nodesTotalCount; // exclude processes that will not fit in the mesh
     if (color)
     {
-        cerr << "Warning: Process " << _worldRank << " is not going to be part of the mesh, i.e. will be idle." << endl;
+        #ifndef _TEST_PRINT_
+            cerr << "Warning: Process " << _worldRank << " is not going to be part of the mesh, i.e. will be idle." << endl;
+        #endif
         MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_subWorldCommunicator);
         _subWorldCommunicator = MPI_COMM_NULL;
         _meshCommunicator = MPI_COMM_NULL;
@@ -790,21 +848,26 @@ void LifeSimulation::readInputFile()
         _settings.globalHeight = ((_settings.globalNotPaddedHeight + _settings.nodesHeightCount - 1  + _arguments.paddingTop + _arguments.paddingBottom) / 
                                   _settings.nodesHeightCount) * _settings.nodesHeightCount;
         
-        if (_settings.globalWidth != _settings.globalNotPaddedWidth + _arguments.paddingLeft + _arguments.paddingRight)
+        if (_settings.globalWidth != _settings.globalNotPaddedWidth + _arguments.paddingLeft + _arguments.paddingRight) // grid width had to be adjusted
         {
-            cerr << "Warning: The input file X dimension (width) of " << _settings.globalNotPaddedWidth 
-                 << (_arguments.paddingLeft || _arguments.paddingRight ? " with the additional padding " : " ") 
-                 << "is not divisible by the X decomposition dimension." << endl;
-            cerr << "         The grid X dimension will be extended to " << _settings.globalWidth << "." << endl;
+            #ifndef _TEST_PRINT_
+                cerr << "Warning: The input file X dimension (width) of " << _settings.globalNotPaddedWidth 
+                     << (_arguments.paddingLeft || _arguments.paddingRight ? " with the additional padding " : " ") 
+                     << "is not divisible by the X decomposition dimension." << endl;
+                cerr << "         The grid X dimension will be extended to " << _settings.globalWidth << "." << endl;
+            #endif
         }
-        if (_settings.globalHeight != _settings.globalNotPaddedHeight + _arguments.paddingTop + _arguments.paddingBottom)
+        if (_settings.globalHeight != _settings.globalNotPaddedHeight + _arguments.paddingTop + _arguments.paddingBottom) // grid height had to be adjusted
         {
-            cerr << "Warning: The input file Y dimension (height) of " << _settings.globalNotPaddedHeight 
-                 << (_arguments.paddingTop || _arguments.paddingBottom ? " with the additional padding " : " ") 
-                 << "is not divisible by the Y decomposition dimension." << endl;
-            cerr << "         The grid Y dimension will be extended to " << _settings.globalHeight << "." << endl;
+            #ifndef _TEST_PRINT_
+                cerr << "Warning: The input file Y dimension (height) of " << _settings.globalNotPaddedHeight 
+                     << (_arguments.paddingTop || _arguments.paddingBottom ? " with the additional padding " : " ") 
+                     << "is not divisible by the Y decomposition dimension." << endl;
+                cerr << "         The grid Y dimension will be extended to " << _settings.globalHeight << "." << endl;
+            #endif
         }
         
+        // compute the local dimensions of the grid
         _settings.localWidth = _settings.globalWidth / _settings.nodesWidthCount;
         _settings.localHeight = _settings.globalHeight / _settings.nodesHeightCount;
         _settings.localWidthWithHaloZones = _settings.localWidth + 2;
@@ -817,7 +880,7 @@ void LifeSimulation::readInputFile()
         int rowRightPadding = _settings.globalWidth - _settings.globalNotPaddedWidth - rowLeftPadding;
         int colTopPadding = _arguments.paddingTop;
 
-        #ifdef DEBUG_PRINT
+        #ifdef _DEBUG_PRINT_
             cerr << "Number of iterations:     " << _arguments.numberOfIterations << endl;
             cerr << "globalHeight:             " << _settings.globalHeight << endl;
             cerr << "globalWidth:              " << _settings.globalWidth << endl;
@@ -843,7 +906,7 @@ void LifeSimulation::readInputFile()
 
         int readLines = 0;
         int idx = colTopPadding * _settings.globalWidth;
-        do
+        do // read rest of the file (1st line is already read)
         {
             idx += rowLeftPadding;
             if (row.length() != static_cast<size_t>(_settings.globalNotPaddedWidth)) // unexpected row length
@@ -870,6 +933,7 @@ void LifeSimulation::readInputFile()
 
 void LifeSimulation::constructDataTypes()
 {
+    // tile dimensions and position
     int outerTileSizes[2] = {_settings.globalHeight, _settings.globalWidth};
     int innerTileSizes[2] = {_settings.localHeight, _settings.localWidth};
     int starts[2] = {0, 0};
@@ -1011,7 +1075,7 @@ void LifeSimulation::exchangeInitialData()
 
 void LifeSimulation::startHaloZonesExchange()
 {
-    // initiate corner exchanges
+    // initiate corner exchanges, tags are necessary to distinguish between exchanges in wraparound mode
     if (_cornerNeighbors[LEFT_UPPER] != MPI_PROC_NULL)
     {
         MPI_Isend(_nextTile + _settings.localWidthWithHaloZones + 1, 1, MPI_BYTE, _cornerNeighbors[LEFT_UPPER], LEFT_UPPER, 
@@ -1064,7 +1128,7 @@ void LifeSimulation::startHaloZonesExchange()
         _cornerRecvRequests[LEFT_LOWER] = MPI_REQUEST_NULL;
     }
 
-    // initiate halo zone exchanges
+    // initiate rest of the halo zones exchange
     MPI_Ineighbor_alltoallw(_nextTile, _neighbourCounts, _neighbourDisplacements, _sendHaloZoneTypes, _nextTile, 
                             _neighbourCounts, _neighbourDisplacements, _recvHaloZoneTypes, _meshCommunicator, &_haloZoneRequest);
 }
@@ -1075,7 +1139,7 @@ void LifeSimulation::awaitHaloZonesExchange()
     MPI_Waitall(4, _cornerSendRequests, MPI_STATUSES_IGNORE);
     MPI_Waitall(4, _cornerRecvRequests, MPI_STATUSES_IGNORE);
 
-    // await halo zone exchanges
+    // await rest of the halo zones exchange
     MPI_Wait(&_haloZoneRequest, MPI_STATUS_IGNORE);
 }
 
@@ -1096,7 +1160,7 @@ void LifeSimulation::computeHaloZones()
     cell_t *nextBottomRow1 = nextTile + _settings.localTileSizeWithHaloZones - 2 * _settings.localWidthWithHaloZones;
 
     // north halo zone
-    for (int i = 1; i < _settings.localWidthWithHaloZones - 1; i++) // adjust offset to not compute undefined corners
+    for (int i = 1; i < _settings.localWidthWithHaloZones - 1; i++)
     {
         nextTopRow1[i] = updateCell(currentTopRow0[i - 1], currentTopRow0[i], currentTopRow0[i + 1], 
                                     currentTopRow1[i - 1], currentTopRow1[i], currentTopRow1[i + 1], 
@@ -1145,6 +1209,7 @@ void LifeSimulation::computeTile()
         int centerIdx = i * _settings.localWidthWithHaloZones;
         int bottomIdx = (i + 1) * _settings.localWidthWithHaloZones;
 
+        // accelerate the computation of each row with SIMD instructions
         #pragma omp simd aligned(currentTile, nextTile: 64) simdlen(16)
         for (int j = 2; j < _settings.localWidthWithHaloZones - 2; j++)
         {
@@ -1189,14 +1254,16 @@ void LifeSimulation::debugPrintLocalTile(bool current = true)
             }
             cerr << endl;
         }
-        MPI_Barrier(_meshCommunicator);
+    
+        MPI_Barrier(_meshCommunicator); // ensure processes do not print over each other (most of the time at least)
     }
 }
 
-void LifeSimulation::testPrintGlobalTile()
+void LifeSimulation::stderrPrintGlobalTile()
 {
-    if (_worldRank == ROOT)
+    if (_worldRank == ROOT && _arguments.stderrPrint)
     {
+        // dump the global tile to stderr in ASCII format
         for (int i = 0; i < _settings.globalHeight; i++)
         {
             for (int j = 0; j < _settings.globalWidth; j++)
@@ -1227,7 +1294,7 @@ void LifeSimulation::prettyPrintGlobalTile()
         }
     };
 
-    if (_worldRank == ROOT)
+    if (_worldRank == ROOT && _arguments.formattedPrint)
     {
         string horizontalSeparator(_settings.globalWidth + _settings.nodesWidthCount + 2, '-');
         string horizontalProcessId(_settings.localWidth, ' ');
@@ -1278,6 +1345,9 @@ void LifeSimulation::generateImagePBM()
             ofstream outputFile(imageFileName, ios::out);
             if (!outputFile.is_open())
             {
+                #ifndef _TEST_PRINT_
+                    cerr << "Warning: Unable to open image output file '" << imageFileName << "'." << endl;
+                #endif
                 return;
             }
             _imageCounter++;
@@ -1315,8 +1385,10 @@ void LifeSimulation::printFFMPEGCommand()
         string outputVideoName = _arguments.outputImageDirectoryName;
         outputVideoName.back() = '.'; // replace '/' with '.'
         outputVideoName += "mp4";
-        cerr << "To generate a video from the images, run the following command:" << endl;
-        cerr << "ffmpeg -framerate 4 -i " << _arguments.outputImageDirectoryName << "%d.pbm " << outputVideoName << endl;  
+        #ifndef _TEST_PRINT_
+            cerr << "To generate a video from the images, run the following command:" << endl;
+            cerr << "ffmpeg -framerate " << _arguments.fps << " -i " << _arguments.outputImageDirectoryName << "%d.pbm " << outputVideoName << endl;  
+        #endif
     }
 }
 
@@ -1350,9 +1422,11 @@ void LifeSimulation::run()
     }
 
     exchangeInitialData();
+    #ifdef _DEBUG_PRINT_
+        debugPrintLocalTile();
+    #endif
 
     // simulation loop
-    // TODO: use size_t for iterations
     for (int iteration = 0; iteration < _arguments.numberOfIterations; iteration++)
     {   
         computeHaloZones();
@@ -1366,9 +1440,7 @@ void LifeSimulation::run()
     }
     
     collectLocalTiles();
-    #ifdef TEST_PRINT
-        testPrintGlobalTile();
-    #endif
+    stderrPrintGlobalTile();
     prettyPrintGlobalTile();
 
     generateVideoFFMPEG();
@@ -1379,7 +1451,7 @@ int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
 
-    {
+    { // RAII scope
         LifeSimulation simulation(argc, argv);
         simulation.run();
     } // ensure all resources are deallocated before MPI_Finalize
