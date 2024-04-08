@@ -189,8 +189,8 @@ private:
     static constexpr int ROOT = 0;                                 ///< Rank of the root process.
     static constexpr int NEIGHBOR_COUNT = 4;                       ///< Number of neighbors of a process in the 2D mesh.
 
-    MPI_Comm _subWorldCommunicator; ///< Communicator containing only the processes that will take part in the simulation.
-    MPI_Comm _meshCommunicator;     ///< Communicator containing the processes organized in a 2D mesh topology.
+    MPI_Comm _subWorldCommunicator = MPI_COMM_NULL; ///< Communicator containing only the processes that will take part in the simulation.
+    MPI_Comm _meshCommunicator = MPI_COMM_NULL;     ///< Communicator containing the processes organized in a 2D mesh topology.
 
     int _worldRank; ///< Rank of the current process in MPI_COMM_WORLD.
     int _worldSize; ///< Number of processes in MPI_COMM_WORLD.
@@ -383,6 +383,37 @@ void LifeSimulation::parseArguments(int argc, char **argv)
 
     if (arguments.size() < 3)
     {
+        if (arguments.size() > 1 && (arguments[1] == "-h" || arguments[1] == "--help"))
+        {
+        help_msg_print:
+            if (_worldRank == ROOT)
+            {
+                cout << "Usage: mpiexec -np <number of processes> ./life <grid file name> <number of iterations> [options]" << endl;
+                cout << "Options:" << endl;
+                cout << "  -w, --wraparound                  Use wrapped around simulation." << endl;
+                cout << "  -dx, --decomposition_x <number>   Number of nodes (processes) in the X direction of the mesh topology." << endl;
+                cout << "  -dy, --decomposition_y <number>   Number of nodes (processes) in the Y direction of the mesh topology." << endl;
+                cout << "  -p, --padding <number>            Padding of the global grid in all directions." << endl;
+                cout << "  -px, --padding_x <number>         Padding of the global grid in the X (height) direction." << endl;
+                cout << "  -py, --padding_y <number>         Padding of the global grid in the Y (width) direction." << endl;
+                cout << "  -pt, --padding_top <number>       Padding of the global grid from the top." << endl;
+                cout << "  -pb, --padding_bottom <number>    Padding of the global grid from the bottom." << endl;
+                cout << "  -pl, --padding_left <number>      Padding of the global grid from the left." << endl;
+                cout << "  -pr, --padding_right <number>     Padding of the global grid from the right." << endl;
+                cout << "  -ppc, --pixels_per_cell <number>  Number of pixels per cell in the generated images/video." << endl;
+                cout << "  -iod, --images_output_directory <directory>" << endl;
+                cout << "                                    Directory where generated images will be stored to." << endl;
+                cout << "  -v, --video <file name>           Generate a video of the simulation in mp4 format." << endl;
+                cout << "  -fps, --frames_per_second <number>" << endl;
+                cout << "                                    Frames per second in the generated video." << endl;
+                cout << "  -nfp, --no_formatted_print        Do not print the global grid in a table-like format." << endl;
+                cout << "  -ep, --stderr_print               Print the unformatted global grid to stderr." << endl;
+                cout << "  -h, --help                        Print this help message." << endl;
+            }
+
+            MPI_Abort(MPI_COMM_WORLD, 0); // this is not idea... FIXME
+        }
+
         if (_worldRank == ROOT)
         {
             cerr << "Error: Not enough arguments (missing 'grid file name' and/or 'number of iterations')." << endl;
@@ -416,7 +447,7 @@ void LifeSimulation::parseArguments(int argc, char **argv)
     {
         if (_worldRank == ROOT)
         {
-            cerr << "Number of iterations must be a non-negative unmber." << endl;
+            cerr << "Number of iterations must be a non-negative number." << endl;
         }
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
@@ -640,6 +671,10 @@ void LifeSimulation::parseArguments(int argc, char **argv)
         {
             _arguments.stderrPrint = true;
         }
+        else if (*iterator == "-h" || *iterator == "--help")
+        {
+            goto help_msg_print;
+        }
         else
         {
             if (_worldRank == ROOT)
@@ -805,11 +840,13 @@ void LifeSimulation::destructMeshTopology()
     if (_subWorldCommunicator != MPI_COMM_NULL)
     {
         MPI_Comm_free(&_subWorldCommunicator);
+        _subWorldCommunicator = MPI_COMM_NULL;
     }
 
     if (_meshCommunicator != MPI_COMM_NULL)
     {
         MPI_Comm_free(&_meshCommunicator);
+        _meshCommunicator = MPI_COMM_NULL;
     }
 }
 
@@ -1031,6 +1068,20 @@ void LifeSimulation::destructDataTypes()
     MPI_Type_free(&_recvHaloZoneTypes[SOUTH]);
     MPI_Type_free(&_recvHaloZoneTypes[WEST]);
     MPI_Type_free(&_recvHaloZoneTypes[EAST]);
+
+    _tileType = MPI_DATATYPE_NULL;
+    _tileResizedType = MPI_DATATYPE_NULL;
+    _tileWithHaloZonesType = MPI_DATATYPE_NULL;
+    
+    _sendHaloZoneTypes[NORTH] = MPI_DATATYPE_NULL;
+    _sendHaloZoneTypes[SOUTH] = MPI_DATATYPE_NULL;
+    _sendHaloZoneTypes[WEST] = MPI_DATATYPE_NULL;
+    _sendHaloZoneTypes[EAST] = MPI_DATATYPE_NULL;
+
+    _recvHaloZoneTypes[NORTH] = MPI_DATATYPE_NULL;
+    _recvHaloZoneTypes[SOUTH] = MPI_DATATYPE_NULL;
+    _recvHaloZoneTypes[WEST] = MPI_DATATYPE_NULL;
+    _recvHaloZoneTypes[EAST] = MPI_DATATYPE_NULL;
 }
 
 void LifeSimulation::constructGridTiles()
@@ -1052,11 +1103,13 @@ void LifeSimulation::destructGridTiles()
     if (_currentTile != nullptr)
     {
         free(_currentTile);
+        _currentTile = nullptr;
     }
 
     if (_nextTile != nullptr)
     {
         free(_nextTile);
+        _nextTile = nullptr;
     }
 }
 
