@@ -1,3 +1,4 @@
+# Tests the program with closed topology (borders are considered dead cells)
 
 make test
 

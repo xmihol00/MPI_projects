@@ -1,3 +1,4 @@
+# Tests the program with wraparound topology (borders are connected to the opposite borders)
 
 make test
 
