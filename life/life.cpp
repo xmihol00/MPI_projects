@@ -1,19 +1,74 @@
 // =======================================================================================================================================================
-// Algorithm:   John Conway's Game of Life simulation
-// Author:      David Mihola
-// E-mail:      xmihol00@stud.fit.vutbr.cz
-// Date:        1. 4. 2024
-// Description: An implementation of Game of Life using the MPI library for communication. 
+// Project:         John Conway's Game of Life simulation
+// Author:          David Mihola
+// E-mail:          xmihol00@stud.fit.vutbr.cz
+// Date:            1. 4. 2024
+// Description:     A parallel implementation of the John Conway's Game of Life using the MPI library for communication. 
+// N° of processes: Arbitrary, HOWEVER THE PLAYING GRID MAY BE EXTENDED, see the description of the solution below.
+// Repository:      https://github.com/xmihol00/MPI_projects/tree/main/life
+// Makefile:        https://github.com/xmihol00/MPI_projects/blob/main/life/Makefile
+// Tests:           https://github.com/xmihol00/MPI_projects/blob/main/life/test_against_solved.sh
+//                  https://github.com/xmihol00/MPI_projects/blob/main/life/wraparound_test_against_solved.sh
+// =======================================================================================================================================================
+
+// =======================================================================================================================================================
+// Usage: mpiexec -np <number of processes> ./life <grid file name> <number of iterations> [options]
+// Options:
+//   -w,   --wraparound                Use wrapped around simulation.
+//   -nx,  --nodes_x <number>          Number of nodes (processes) in the X direction of the mesh topology.
+//   -ny,  --nodes_y <number>          Number of nodes (processes) in the Y direction of the mesh topology.
+//   -p,   --padding <number>          Padding of the global grid in all directions.
+//   -px,  --padding_x <number>        Padding of the global grid in the X (height) direction.
+//   -py,  --padding_y <number>        Padding of the global grid in the Y (width) direction.
+//   -pt,  --padding_top <number>      Padding of the global grid from the top.
+//   -pb,  --padding_bottom <number>   Padding of the global grid from the bottom.
+//   -pl,  --padding_left <number>     Padding of the global grid from the left.
+//   -pr,  --padding_right <number>    Padding of the global grid from the right.
+//   -ppc, --pixels_per_cell <number>  Number of pixels per cell in the generated images/video.
+//   -iod, --images_output_directory <directory>
+//                                     Directory where generated images will be stored to.
+//   -v,   --video <file name>         Generate a video of the simulation in mp4 format.
+//   -fps, --frames_per_second <number>
+//                                     Frames per second in the generated video.
+//   -nfp, --no_formatted_print        Do not print the global grid in a table-like format.
+//   -ep,  --stderr_print              Print the unformatted global grid to stderr.
+//   -h,   --help                      Print this help message.
+// 
+// Examples:
+//   mpiexec -n 4 ./life other_grids/glider_create_gun.txt 600 -v glider_gun.mp4 -fps 10 -pb 9 -pr 3
+//     # produced video: https://github.com/xmihol00/MPI_projects/blob/main/life/glider_gun.mp4
+//   mpiexec --oversubscribe -n 6 ./life wraparound_solved_grids/glider_8x8/00.txt 900 -w -v glider.mp4 -p 10 -fps 15 -ny 3
+//     # produced video: https://github.com/xmihol00/MPI_projects/blob/main/life/glider.mp4
+//   mpiexec --oversubscribe -n 64 ./life wraparound_solved_grids/glider_8x8/00.txt 11 -w 
+//     # extreme case with number of cells equal to the number of processes, output:
+//      |0|1|2|3|4|5|6|7|
+//     ------------------
+//     0|1|0|0|0|0|0|0|0|
+//     ------------------
+//     1|0|1|1|0|0|0|0|0|
+//     ------------------
+//     2|1|1|0|0|0|0|0|0|
+//     ------------------
+//     3|0|0|0|0|0|0|0|0|
+//     ------------------
+//     4|0|0|0|0|0|0|0|0|
+//     ------------------
+//     5|0|0|0|0|0|0|0|0|
+//     ------------------
+//     6|0|0|0|0|0|0|0|0|
+//     ------------------
+//     7|0|0|0|0|0|0|0|0|
+//     ------------------
 // =======================================================================================================================================================
 
 // =======================================================================================================================================================
 // Description of the solution:
-// 1. Processes are organized into a 2D (cartesian) mesh topology. The dimensions of the mesh can be specified by the user, see TODO, or are derived 
-//    automatically. The automatically derived mesh dimensions will always contain a power of 2 processes, see TODO. Processes that do not fit into the 
-//    mesh will not be utilized. Lastly, each process in the mesh retrieves ranks of its neighbors, especially of its corner neighbors (NW, NE, SE, SW).
+// 1. Processes are organized into a 2D (cartesian) mesh topology. The dimensions of the mesh can be specified by the user, or are derived automatically. 
+//    The automatically derived mesh dimensions will always contain a power of 2 processes. Processes that do not fit into the mesh will not be utilized. 
+//    Lastly, each process in the mesh retrieves ranks of its neighbors, especially of its corner neighbors (NW, NE, SE, SW).
 // 2. The input file is read only by the root process. Based on the size of the input file and the length of the first row, the global grid dimensions, 
-//    i.e. the simulation space, are determined. The global grid dimensions are adjusted to be divisible by the number of nodes in each dimension of the
-//    mesh. The content of the file is then placed to the left upper corner of the global grid. The rest is padded with zeros.
+//    i.e. the space of the simulation, are determined. The global grid dimensions are adjusted to be divisible by the number of nodes in each dimension 
+//    of the mesh. The content of the file is then placed to the left upper corner of the global grid. The rest is padded with '0'.
 // 3. The root process computes the sizes of local tiles, i.e. the parts of the global grid assigned to each process, and broadcasts this information to
 //    all the processes.
 // 4. Each process creates MPI data types specifying its local tile, the tile with halo zones (edges of the local tiles of neighboring processes, which 
@@ -162,12 +217,12 @@ private:
     /**
      * @brief Prints the unformatted global grid to stderr, living cells represented by '1', dead cells by '0', i.e. the global grid buffer is dumped in ASCII.
      */
-    void stderrPrintGlobalTile();
+    void unformattedPrintGlobalTile(ostream &stream);
 
     /**
      * @brief Prints the global grid in a table-like format, where the table header contains coordinates of the utilized processes in the 2D mesh.
      */
-    void prettyPrintGlobalTile();
+    void formattedPrintGlobalTile();
 
     /**
      * @brief Generates an image of the current state of the simulation the PBM format.
@@ -192,10 +247,11 @@ private:
     MPI_Comm _subWorldCommunicator = MPI_COMM_NULL; ///< Communicator containing only the processes that will take part in the simulation.
     MPI_Comm _meshCommunicator = MPI_COMM_NULL;     ///< Communicator containing the processes organized in a 2D mesh topology.
 
-    int _worldRank; ///< Rank of the current process in MPI_COMM_WORLD.
-    int _worldSize; ///< Number of processes in MPI_COMM_WORLD.
-    int _meshSize;  ///< Number of processes in the mesh communicator.
-    int _meshRank;  ///< Rank of the current process in the mesh communicator.
+    bool _activeProcess = true; ///< Flag indicating whether the current process is going to be part of the simulation.
+    int _worldRank;             ///< Rank of the current process in MPI_COMM_WORLD.
+    int _worldSize;             ///< Number of processes in MPI_COMM_WORLD.
+    int _meshSize;              ///< Number of processes in the mesh communicator.
+    int _meshRank;              ///< Rank of the current process in the mesh communicator.
 
     /**
      * @brief Structure containing the arguments of the simulation specified by user.
@@ -276,8 +332,6 @@ private:
     int _imageCounter = 0; ///< Counter of generated images.
 
     // self-explanatory helper functions
-    inline constexpr bool isActiveProcess() { return _subWorldCommunicator != MPI_COMM_NULL; };
-
     inline constexpr bool isTopRow()      { return _neighbors[NORTH] == MPI_PROC_NULL; };
     inline constexpr bool isBottomRow()   { return _neighbors[SOUTH] == MPI_PROC_NULL; };
     inline constexpr bool isLeftColumn()  { return _neighbors[WEST]  == MPI_PROC_NULL; };
@@ -307,19 +361,22 @@ LifeSimulation::LifeSimulation(int argc, char **argv)
     MPI_Comm_size(MPI_COMM_WORLD, &_worldSize);
 
     parseArguments(argc, argv);
-    constructMeshTopology();
-    readInputFile();
 
-    if (isActiveProcess())
+    if (_activeProcess) // '-h' or '--help' switch was not specified
     {
-        constructDataTypes();
-        constructGridTiles();
+        constructMeshTopology();
+        if (_activeProcess) // the process is part of the mesh
+        {
+            readInputFile();
+            constructDataTypes();
+            constructGridTiles();
+        }
     }
 }
 
 LifeSimulation::~LifeSimulation()
 {
-    if (isActiveProcess())
+    if (_activeProcess)
     {
         destructGridTiles();
         destructDataTypes();
@@ -390,28 +447,29 @@ void LifeSimulation::parseArguments(int argc, char **argv)
             {
                 cout << "Usage: mpiexec -np <number of processes> ./life <grid file name> <number of iterations> [options]" << endl;
                 cout << "Options:" << endl;
-                cout << "  -w, --wraparound                  Use wrapped around simulation." << endl;
-                cout << "  -dx, --decomposition_x <number>   Number of nodes (processes) in the X direction of the mesh topology." << endl;
-                cout << "  -dy, --decomposition_y <number>   Number of nodes (processes) in the Y direction of the mesh topology." << endl;
-                cout << "  -p, --padding <number>            Padding of the global grid in all directions." << endl;
-                cout << "  -px, --padding_x <number>         Padding of the global grid in the X (height) direction." << endl;
-                cout << "  -py, --padding_y <number>         Padding of the global grid in the Y (width) direction." << endl;
-                cout << "  -pt, --padding_top <number>       Padding of the global grid from the top." << endl;
-                cout << "  -pb, --padding_bottom <number>    Padding of the global grid from the bottom." << endl;
-                cout << "  -pl, --padding_left <number>      Padding of the global grid from the left." << endl;
-                cout << "  -pr, --padding_right <number>     Padding of the global grid from the right." << endl;
+                cout << "  -w,   --wraparound                Use wrapped around simulation." << endl;
+                cout << "  -nx,  --nodes_x <number>          Number of nodes (processes) in the X (width) direction of the mesh topology." << endl;
+                cout << "  -ny,  --nodes_y <number>          Number of nodes (processes) in the Y (height) direction of the mesh topology." << endl;
+                cout << "  -p,   --padding <number>          Padding of the global grid in all directions." << endl;
+                cout << "  -px,  --padding_x <number>        Padding of the global grid in the X (width) direction." << endl;
+                cout << "  -py,  --padding_y <number>        Padding of the global grid in the Y (height) direction." << endl;
+                cout << "  -pt,  --padding_top <number>      Padding of the global grid from the top." << endl;
+                cout << "  -pb,  --padding_bottom <number>   Padding of the global grid from the bottom." << endl;
+                cout << "  -pl,  --padding_left <number>     Padding of the global grid from the left." << endl;
+                cout << "  -pr,  --padding_right <number>    Padding of the global grid from the right." << endl;
                 cout << "  -ppc, --pixels_per_cell <number>  Number of pixels per cell in the generated images/video." << endl;
                 cout << "  -iod, --images_output_directory <directory>" << endl;
                 cout << "                                    Directory where generated images will be stored to." << endl;
-                cout << "  -v, --video <file name>           Generate a video of the simulation in mp4 format." << endl;
+                cout << "  -v,   --video <file name>         Generate a video of the simulation in mp4 format." << endl;
                 cout << "  -fps, --frames_per_second <number>" << endl;
                 cout << "                                    Frames per second in the generated video." << endl;
                 cout << "  -nfp, --no_formatted_print        Do not print the global grid in a table-like format." << endl;
-                cout << "  -ep, --stderr_print               Print the unformatted global grid to stderr." << endl;
-                cout << "  -h, --help                        Print this help message." << endl;
+                cout << "  -ep,  --stderr_print              Print the unformatted global grid to stderr." << endl;
+                cout << "  -h,   --help                      Print this help message." << endl;
             }
 
-            MPI_Abort(MPI_COMM_WORLD, 0); // this is not idea... FIXME
+            _activeProcess = false;
+            return;
         }
 
         if (_worldRank == ROOT)
@@ -460,7 +518,7 @@ void LifeSimulation::parseArguments(int argc, char **argv)
         {
             _arguments.wraparound = true;
         }
-        else if (*iterator == "-dx" || *iterator == "--decomposition_x")
+        else if (*iterator == "-nx" || *iterator == "--nodes_x")
         {
             iterator++;
             if (iterator == arguments.end())
@@ -470,7 +528,7 @@ void LifeSimulation::parseArguments(int argc, char **argv)
 
             _arguments.nodesWidthCount = parseInt(*iterator, *lastIterator);
         }
-        else if (*iterator == "-dy" || *iterator == "--decomposition_y")
+        else if (*iterator == "-ny" || *iterator == "--nodes_y")
         {
             iterator++;
             if (iterator == arguments.end())
@@ -743,6 +801,7 @@ void LifeSimulation::constructMeshTopology()
         MPI_Comm_split(MPI_COMM_WORLD, MPI_UNDEFINED, MPI_UNDEFINED, &_subWorldCommunicator);
         _subWorldCommunicator = MPI_COMM_NULL;
         _meshCommunicator = MPI_COMM_NULL;
+        _activeProcess = false;
 
         return; // this process will no longer be utilized
     }
@@ -852,7 +911,7 @@ void LifeSimulation::destructMeshTopology()
 
 void LifeSimulation::readInputFile()
 {
-    if (_worldRank == ROOT) // only the root process reads the input file
+    if (_meshRank == ROOT) // only the root process reads the input file
     {
         ifstream inputFile(_arguments.inputFileName, ios::in);
         if (!inputFile.is_open())
@@ -964,8 +1023,8 @@ void LifeSimulation::readInputFile()
         inputFile.close();
     }
 
-    // broadcast the additionally obtained settings to all processes
-    MPI_Bcast(&_settings, sizeof(Settings), MPI_BYTE, 0, MPI_COMM_WORLD);
+    // broadcast the additionally obtained settings to all processes in the mesh
+    MPI_Bcast(&_settings, sizeof(Settings), MPI_BYTE, 0, _meshCommunicator);
 }
 
 void LifeSimulation::constructDataTypes()
@@ -1312,23 +1371,23 @@ void LifeSimulation::debugPrintLocalTile(bool current = true)
     }
 }
 
-void LifeSimulation::stderrPrintGlobalTile()
+void LifeSimulation::unformattedPrintGlobalTile(ostream &stream)
 {
-    if (_worldRank == ROOT && _arguments.stderrPrint)
+    if (_meshRank == ROOT)
     {
-        // dump the global tile to stderr in ASCII format
+        // dump the global tile to stream in ASCII format
         for (int i = 0; i < _settings.globalHeight; i++)
         {
             for (int j = 0; j < _settings.globalWidth; j++)
             {
-                cerr << static_cast<int>(_globalTile[i * _settings.globalWidth + j]);
+                stream << static_cast<int>(_globalTile[i * _settings.globalWidth + j]);
             }
-            cerr << "\n";
+            stream << "\n";
         }
     }
 }
 
-void LifeSimulation::prettyPrintGlobalTile()
+void LifeSimulation::formattedPrintGlobalTile()
 {
     // format table header string with a process rank
     auto fillInProcessRank = [](int processId, string &target)
@@ -1347,7 +1406,7 @@ void LifeSimulation::prettyPrintGlobalTile()
         }
     };
 
-    if (_worldRank == ROOT && _arguments.formattedPrint)
+    if (_meshRank == ROOT)
     {
         string horizontalSeparator(_settings.globalWidth + _settings.nodesWidthCount + 2, '-');
         string horizontalProcessId(_settings.localWidth, ' ');
@@ -1389,43 +1448,40 @@ void LifeSimulation::prettyPrintGlobalTile()
 
 void LifeSimulation::generateImagePBM()
 {
-    if (_settings.generateImages)
+    collectLocalTiles();
+    if (_meshRank == ROOT)
     {
-        collectLocalTiles();
-        if (_worldRank == ROOT)
+        string imageFileName = _arguments.outputImageDirectoryName + to_string(_imageCounter) + ".pbm";
+        ofstream outputFile(imageFileName, ios::out);
+        if (!outputFile.is_open())
         {
-            string imageFileName = _arguments.outputImageDirectoryName + to_string(_imageCounter) + ".pbm";
-            ofstream outputFile(imageFileName, ios::out);
-            if (!outputFile.is_open())
+            #ifndef _TEST_PRINT_
+                cerr << "Warning: Unable to open image output file '" << imageFileName << "'." << endl;
+            #endif
+            return;
+        }
+        _imageCounter++;
+
+        int imageWidth = _settings.globalWidth * _arguments.pixelsPerCell;
+        int imageHeight = _settings.globalHeight * _arguments.pixelsPerCell;
+        outputFile << "P1" << endl;
+        outputFile << imageWidth << " " << imageHeight << endl;
+
+        string row;
+        row.resize(imageWidth);
+        for (int i = 0; i < _settings.globalHeight; i++)
+        {
+            for (int j = 0; j < _settings.globalWidth; j++)
             {
-                #ifndef _TEST_PRINT_
-                    cerr << "Warning: Unable to open image output file '" << imageFileName << "'." << endl;
-                #endif
-                return;
-            }
-            _imageCounter++;
-
-            int imageWidth = _settings.globalWidth * _arguments.pixelsPerCell;
-            int imageHeight = _settings.globalHeight * _arguments.pixelsPerCell;
-            outputFile << "P1" << endl;
-            outputFile << imageWidth << " " << imageHeight << endl;
-
-            string row;
-            row.resize(imageWidth);
-            for (int i = 0; i < _settings.globalHeight; i++)
-            {
-                for (int j = 0; j < _settings.globalWidth; j++)
-                {
-                    for (int k = 0; k < _arguments.pixelsPerCell; k++)
-                    {
-                        row[j * _arguments.pixelsPerCell + k] = _globalTile[i * _settings.globalWidth + j] ? '1' : '0';
-                    }
-                }
-
                 for (int k = 0; k < _arguments.pixelsPerCell; k++)
                 {
-                    outputFile << row << endl;
+                    row[j * _arguments.pixelsPerCell + k] = _globalTile[i * _settings.globalWidth + j] ? '1' : '0';
                 }
+            }
+
+            for (int k = 0; k < _arguments.pixelsPerCell; k++)
+            {
+                outputFile << row << endl;
             }
         }
     }
@@ -1433,7 +1489,7 @@ void LifeSimulation::generateImagePBM()
 
 void LifeSimulation::printFFMPEGCommand()
 {
-    if (_worldRank == ROOT && _settings.generateImages && !_settings.generateVideo)
+    if (_meshRank == ROOT)
     {
         string outputVideoName = _arguments.outputImageDirectoryName;
         outputVideoName.back() = '.'; // replace '/' with '.'
@@ -1447,7 +1503,7 @@ void LifeSimulation::printFFMPEGCommand()
 
 void LifeSimulation::generateVideoFFMPEG()
 {
-    if (_worldRank == ROOT && _settings.generateVideo)
+    if (_meshRank == ROOT)
     {
         string ffmpegCommand = "ffmpeg -y -framerate " + to_string(_arguments.fps) + " -i " + _arguments.outputImageDirectoryName + "%d.pbm " + 
                                _arguments.videoFileName + ">/dev/null 2>&1";
@@ -1469,7 +1525,7 @@ void LifeSimulation::generateVideoFFMPEG()
 
 void LifeSimulation::run()
 {
-    if (!isActiveProcess()) // idle processes do not participate in the simulation
+    if (!_activeProcess) // idle processes do not participate in the simulation
     {
         return;
     }
@@ -1487,17 +1543,39 @@ void LifeSimulation::run()
         computeTile();
         awaitHaloZonesExchange();
 
-        generateImagePBM();
+        if (_settings.generateImages)
+        {
+            generateImagePBM();
+        }
 
         swap(_currentTile, _nextTile);
     }
     
     collectLocalTiles();
-    stderrPrintGlobalTile();
-    prettyPrintGlobalTile();
 
-    generateVideoFFMPEG();
-    printFFMPEGCommand();
+    if (_arguments.stderrPrint)
+    {
+        unformattedPrintGlobalTile(cerr);
+    }
+
+    if (_arguments.formattedPrint)
+    {
+        formattedPrintGlobalTile();
+    }
+    else
+    {
+        unformattedPrintGlobalTile(cout);
+    }
+
+    if (_settings.generateVideo)
+    {
+        generateVideoFFMPEG();
+    }
+
+    if (_settings.generateImages && !_settings.generateVideo)
+    {
+        printFFMPEGCommand();
+    }
 }
 
 int main(int argc, char **argv)
