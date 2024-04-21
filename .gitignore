@@ -49,3 +49,5 @@ life
 life/life_test
 life/life_debug
 *.pbm
+
+rtap
