@@ -15,13 +15,15 @@ matplotlib.rc('ytick', labelsize=SMALL_SIZE)
 matplotlib.rc('legend', fontsize=SMALL_SIZE)  
 matplotlib.rc('figure', titlesize=LARGE_SIZE) 
 
+output_types = [["seq", "par"], ["par"]]
+
 fig, ax = plt.subplots(figsize=(12, 6))
 for i, filename, alignment in zip([0, 1], ["fs_comparison", "fs_comparison_aligned"], ["unaligned", "aligned 4 KB"]):
     df = pd.read_csv(f"{filename}.csv", sep=";")
     df.loc[:, "mpi_procs"] *= df.loc[:, "omp_threads"]
     fs_settings = df["stripe"].unique()
 
-    for output_type, color, marker in zip(["seq", "par"], list(mcolors.TABLEAU_COLORS.keys())[i::2], ["s", "D"]):
+    for output_type, color, marker in zip(output_types[i], list(mcolors.TABLEAU_COLORS.keys())[i::2], ["s", "D"]):
         df_output = df[df["output_type"] == output_type]
         for domain_size, marker_fill in zip([4096, 2048, 1024], ["full", "bottom", "top"]):
             df_domain = df_output[df_output["domain_size"] == domain_size].copy()

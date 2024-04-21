@@ -28,6 +28,7 @@
 #define RAW_EXCHANGE (!DATA_TYPE_EXCHANGE)
 
 #define MEASURE_HALO_ZONE_COMPUTATION_TIME (0) // 1 - measure halo zone computation time, 0 - do not measure halo zone computation time
+#define MEASURE_COMMUNICATION_DELAY (0) // 1 - measure communication delay, 0 - do not measure communication delay
 
 /**
  * @brief The ParallelHeatSolver class implements parallel MPI based heat
@@ -381,6 +382,10 @@ private:
 
     #if MEASURE_HALO_ZONE_COMPUTATION_TIME
         size_t _haloZoneComputationDelay = 0;
+    #endif
+
+    #if MEASURE_COMMUNICATION_DELAY
+        size_t _communicationDelay = 0;
     #endif
 };
 

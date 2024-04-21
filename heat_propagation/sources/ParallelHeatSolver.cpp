@@ -22,7 +22,7 @@
 #include "ParallelHeatSolver.hpp"
 
 using namespace std;
-#if MEASURE_HALO_ZONE_COMPUTATION_TIME
+#if MEASURE_HALO_ZONE_COMPUTATION_TIME || MEASURE_COMMUNICATION_DELAY
     using namespace std::chrono;
 #endif
 
@@ -925,20 +925,24 @@ void ParallelHeatSolver::computeAndPrintMidColAverageParallel_Raw(size_t iterati
 void ParallelHeatSolver::computeAndPrintMidColAverageParallel_DataType(size_t iteration)
 {
     float sum = 0;
+    bool tileIdx = !(iteration & 1);
     if (_decomposition.nx == 1) // there is only one column, middle column of the tile must be sampled (can happen only with 1 or 2 processes)
     {
         int midColIdx = _sizes.localWidthWithHalos >> 1;
+
+        #pragma omp parallel for reduction(+ : sum) schedule(static)
         for (int i = 2; i < _sizes.localHeightWithHalos - 2; i++)
         {
-            sum += _tempTiles[!(iteration & 1)][i * _sizes.localWidthWithHalos + midColIdx + 2];
+            sum += _tempTiles[tileIdx][i * _sizes.localWidthWithHalos + midColIdx + 2];
         }
         sum /= _sizes.localHeight; // average locally
     }
     else // there are multiple columns, left most column must be sampled
     {
+        #pragma omp parallel for reduction(+ : sum) schedule(static)
         for (int i = 2; i < _sizes.localHeightWithHalos - 2; i++)
         {
-            sum += _tempTiles[!(iteration & 1)][i * _sizes.localWidthWithHalos + 1];
+            sum += _tempTiles[tileIdx][i * _sizes.localWidthWithHalos + 1];
         }
         sum /= _sizes.localHeight; // average locally
     }
@@ -958,6 +962,8 @@ void ParallelHeatSolver::computeAndPrintMidColAverageSequential(float timeElapse
     if (_worldRank == 0) // only the root process prints the final report
     {
         float averageTemp = 0;
+
+        #pragma omp parallel for reduction(+ : averageTemp) schedule(static)
         for (int i = 0; i < _sizes.globalEdge; i++)
         {
             averageTemp += outResult[i * _sizes.globalEdge + (_sizes.globalEdge >> 1)];
@@ -1145,8 +1151,15 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
             _haloZoneComputationDelay += duration_cast<nanoseconds>(end - start).count();
         #endif
 
+        #if MEASURE_COMMUNICATION_DELAY
+            auto start = high_resolution_clock::now();
+        #endif
         // start the halo zone exchange (async P2P communication, or RMA communication if enabled)
         (this->*startHaloExchangeFunction)(next);
+        #if MEASURE_COMMUNICATION_DELAY
+            auto end = high_resolution_clock::now();
+            _communicationDelay += duration_cast<nanoseconds>(end - start).count();
+        #endif
 
         // compute the rest of the tile (inner part)
         computeTempTile_DataType(current, next);
@@ -1193,6 +1206,16 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
             cout << ";" << globalAverage / _worldSize << endl;
         }
     #endif
+
+    #if MEASURE_COMMUNICATION_DELAY
+        size_t localAverage = _communicationDelay / mSimulationProps.getNumIterations();
+        size_t globalAverage = 0;
+        MPI_Reduce(&localAverage, &globalAverage, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+        if (_worldRank == 0)
+        {
+            cout << ";" << globalAverage / _worldSize << endl;
+        }
+    #endif
 #elif RAW_EXCHANGE
     // scatter the initial data across the nodes from the root node
     scatterInitialData_Raw();
@@ -1228,8 +1251,15 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
         // compute the rest of the tile (inner part)
         computeTempTile_Raw(current, next);
 
+        #if MEASURE_COMMUNICATION_DELAY
+            auto start = high_resolution_clock::now();
+        #endif
         // wait for all halo zone exchanges to finalize
         (this->*awaitHaloExchangeFunction)();
+        #if MEASURE_COMMUNICATION_DELAY
+            auto end = high_resolution_clock::now();
+            _communicationDelay += duration_cast<nanoseconds>(end - start).count();
+        #endif
 
         // store the data if required
         if (shouldStoreData(iter))
@@ -1264,6 +1294,16 @@ void ParallelHeatSolver::run(vector<float, AlignedAllocator<float>> &outResult)
 
     #if MEASURE_HALO_ZONE_COMPUTATION_TIME
         size_t localAverage = _haloZoneComputationDelay / mSimulationProps.getNumIterations();
+        size_t globalAverage = 0;
+        MPI_Reduce(&localAverage, &globalAverage, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+        if (_worldRank == 0)
+        {
+            cout << ";" << globalAverage / _worldSize << endl;
+        }
+    #endif
+
+    #if MEASURE_COMMUNICATION_DELAY
+        size_t localAverage = _communicationDelay / mSimulationProps.getNumIterations();
         size_t globalAverage = 0;
         MPI_Reduce(&localAverage, &globalAverage, 1, MPI_UNSIGNED_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
         if (_worldRank == 0)

@@ -1,8 +1,8 @@
 // =======================================================================================================================================================
 // Project:         John Conway's Game of Life simulation
-// Author:          David Mihola
+// Author:          David Mihola (xmihol00)
 // E-mail:          xmihol00@stud.fit.vutbr.cz
-// Date:            1. 4. 2024
+// Date:            26. 4. 2024
 // Description:     A parallel implementation of the John Conway's Game of Life using the MPI library for communication. 
 // N° of processes: Arbitrary, HOWEVER THE PLAYING GRID MAY BE EXTENDED, see the description of the solution below.
 // Repository:      https://github.com/xmihol00/MPI_projects/tree/main/life
@@ -91,9 +91,8 @@
 #include <mpi.h>
 #include <iostream>
 #include <string>
-#include <queue>
 #include <bits/stdc++.h>
-#include <array>
+#include <fstream>
 
 using namespace std;
 using cell_t = uint8_t;
