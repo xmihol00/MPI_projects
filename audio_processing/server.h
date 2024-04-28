@@ -12,19 +12,13 @@ public:
     void run() override;
 
 protected:
-    constexpr static int CLIENT_RANK{0};
-
-    void parseArguments(int argc, char **argv) override;
-    void startSendChunk() override;
-    void startReceiveChunk() override;
-    void awaitSendChunk() override;
-    void awaitReceiveChunk() override;
-
-    virtual void allocateBuffers() = 0;
-    virtual void freeBuffers() = 0;
     virtual void processChunk() = 0;
 
-    bool _run = true;
+private:
+    void startSendChunk() override;
+    void startReceiveChunk() override;
+    bool awaitSendChunk() override;
+    bool awaitReceiveChunk() override;
 };
 
 #endif

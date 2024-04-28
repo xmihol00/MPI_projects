@@ -14,13 +14,18 @@ public:
     virtual void run() = 0;
 
 protected:
+    constexpr static int CLIENT_RANK{0};
+    constexpr static int SERVER_RANK{1};
+    constexpr static int ROOT{CLIENT_RANK};
+    constexpr static int VALID_TAG{0};
+    constexpr static int TERMINATING_TAG{1};
+
     virtual void parseArguments(int argc, char **argv);
     virtual void startSendChunk() = 0;
     virtual void startReceiveChunk() = 0;
-    virtual void awaitSendChunk() = 0;
-    virtual void awaitReceiveChunk() = 0;
+    virtual bool awaitSendChunk() = 0;
+    virtual bool awaitReceiveChunk() = 0;
 
-    constexpr static int ROOT{0};
     int _rank;
     MPI_Comm _clientServerComm{MPI_COMM_NULL};
 
@@ -37,8 +42,10 @@ protected:
         void    *any;
     };
 
-    Buffer _inputBuffer;
-    Buffer _outputBuffer;
+    Buffer _currentInputBuffer;
+    Buffer _currentOutputBuffer;
+    Buffer _nextInputBuffer;
+    Buffer _nextOutputBuffer;
     int _bufferByteSize{0};
 
     uint32_t _samplingRate{44100};

@@ -38,28 +38,38 @@ Client::Client(int argc, char **argv) : ClientServer(argc, argv)
     switch (_samplingDatatype)
     {
         case paFloat32:
-            _inputBuffer.f32 = new float[_samplesPerChunk * _channels];
-            _outputBuffer.f32 = new float[_samplesPerChunk * _channels];
+            _currentInputBuffer.f32 = new float[_samplesPerChunk * _channels];
+            _currentOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
+            _nextInputBuffer.f32 = new float[_samplesPerChunk * _channels];
+            _nextOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
             break;
 
         case paInt32:
-            _inputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
-            _outputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
+            _currentInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
+            _currentOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
+            _nextInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
+            _nextOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
             break;
 
         case paInt16:
-            _inputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
-            _outputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
+            _currentInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
+            _currentOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
+            _nextInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
+            _nextOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
             break;
 
         case paInt8:
-            _inputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
-            _outputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
+            _currentInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
+            _currentOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
+            _nextInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
+            _nextOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
             break;
 
         case paUInt8:
-            _inputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
-            _outputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
+            _currentInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
+            _currentOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
+            _nextInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
+            _nextOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
             break;
     }
 
@@ -68,36 +78,48 @@ Client::Client(int argc, char **argv) : ClientServer(argc, argv)
 
 Client::~Client()
 {
-    Pa_CloseStream(_stream);
-    Pa_Terminate();
-
     switch (_samplingDatatype)
     {
         case paFloat32:
-            delete[] _inputBuffer.f32;
-            delete[] _outputBuffer.f32;
+            delete[] _nextOutputBuffer.f32;
+            delete[] _nextInputBuffer.f32;
+            delete[] _currentOutputBuffer.f32;
+            delete[] _currentInputBuffer.f32;
             break;
 
         case paInt32:
-            delete[] _inputBuffer.i32;
-            delete[] _outputBuffer.i32;
+            delete[] _nextOutputBuffer.i32;
+            delete[] _nextInputBuffer.i32;
+            delete[] _currentOutputBuffer.i32;
+            delete[] _currentInputBuffer.i32;
             break;
 
         case paInt16:
-            delete[] _inputBuffer.i16;
-            delete[] _outputBuffer.i16;
+            delete[] _nextOutputBuffer.i16;
+            delete[] _nextInputBuffer.i16;
+            delete[] _currentOutputBuffer.i16;
+            delete[] _currentInputBuffer.i16;
             break;
 
         case paInt8:
-            delete[] _inputBuffer.i8;
-            delete[] _outputBuffer.i8;
+            delete[] _nextOutputBuffer.i8;
+            delete[] _nextInputBuffer.i8;
+            delete[] _currentOutputBuffer.i8;
+            delete[] _currentInputBuffer.i8;
             break;
 
         case paUInt8:
-            delete[] _inputBuffer.u8;
-            delete[] _outputBuffer.u8;
+            delete[] _nextOutputBuffer.u8;
+            delete[] _nextInputBuffer.u8;
+            delete[] _currentOutputBuffer.u8;
+            delete[] _currentInputBuffer.u8;
             break;
     }
+
+    Pa_CloseStream(_stream);
+    Pa_Terminate();
+
+    ClientServer::~ClientServer();
 }
 
 void Client::parseArguments(int argc, char **argv)
@@ -120,7 +142,7 @@ void Client::parseArguments(int argc, char **argv)
     };
     
 
-    for (; idx < arguments.size(); idx)
+    for (; idx < arguments.size(); idx++)
     {
         if (arguments[idx] == "-d")
         {
@@ -157,24 +179,34 @@ void Client::parseArguments(int argc, char **argv)
     }
 }
 
+bool Client::keyNotPressed()
+{   
+    fd_set fdSet;
+    FD_ZERO(&fdSet);
+    FD_SET(STDIN_FILENO, &fdSet);
+    return select(1, &fdSet, nullptr, nullptr, &_terminalTimeout) == 0;
+}
+
 void Client::startSendChunk()
 {
-    MPI_Isend(_inputBuffer.any, _bufferByteSize, MPI_BYTE, SERVER_RANK, 0, _clientServerComm, &_sendRequest);
+    MPI_Isend(_currentInputBuffer.any, _bufferByteSize, MPI_BYTE, SERVER_RANK, VALID_TAG, _clientServerComm, &_sendRequest);
 }
 
 void Client::startReceiveChunk()
 {
-    MPI_Irecv(_outputBuffer.any, _bufferByteSize, MPI_BYTE, SERVER_RANK, 0, _clientServerComm, &_receiveRequest);
+    MPI_Irecv(_nextOutputBuffer.any, _bufferByteSize, MPI_BYTE, SERVER_RANK, VALID_TAG, _clientServerComm, &_receiveRequest);
 }
 
-void Client::awaitSendChunk()
+bool Client::awaitSendChunk()
 {
-    MPI_Wait(&_sendRequest, MPI_STATUS_IGNORE);
+    MPI_Wait(&_sendRequest, MPI_STATUS_IGNORE); // FIXME, should check for errors
+    return true;
 }
 
-void Client::awaitReceiveChunk()
+bool Client::awaitReceiveChunk()
 {
-    MPI_Wait(&_receiveRequest, MPI_STATUS_IGNORE);
+    MPI_Wait(&_receiveRequest, MPI_STATUS_IGNORE); // FIXME, should check for errors
+    return true;
 }
 
 void Client::run()
@@ -188,20 +220,26 @@ void Client::run()
 
     for (int i = 0; i < INITIAL_WRITE_PADDING; i++)
     {
-        Pa_WriteStream(_stream, _outputBuffer.f32, _samplesPerChunk);
+        Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
     }
 
-    cout << "Press any key to stop the audio processing..." << endl;
-    while (!getch())
+    cout << "Press enter to stop the audio processing..." << endl;
+    startSendChunk();
+    while (keyNotPressed())
     {
         startReceiveChunk();
 
-        Pa_ReadStream(_stream, _inputBuffer.f32, _samplesPerChunk);
+        awaitSendChunk();
+        swap(_currentOutputBuffer.any, _nextOutputBuffer.any);
+        Pa_ReadStream(_stream, _currentInputBuffer.any, _samplesPerChunk);
         startSendChunk();
 
         awaitReceiveChunk();
-        Pa_WriteStream(_stream, _outputBuffer.f32, _samplesPerChunk);
-
-        awaitSendChunk();
+        swap(_currentInputBuffer.any, _nextInputBuffer.any);
+        Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
     }
+    startReceiveChunk();
+    MPI_Send(_currentInputBuffer.any, 1, MPI_BYTE, SERVER_RANK, TERMINATING_TAG, _clientServerComm);
+
+    cout << "Audio processing stopped." << endl;
 }

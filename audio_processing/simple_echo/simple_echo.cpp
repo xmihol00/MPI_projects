@@ -1,4 +1,4 @@
-// mpic++ simple_echo.cpp -O3 -std=c++17 /usr/local/lib/libportaudio.a -lrt -lm -lasound -pthread -o simple_echo
+// mpic++ simple_echo.cpp /usr/local/lib/libportaudio.a -lrt -lm -lasound -pthread -O3 -std=c++17 -o simple_echo
 
 #include "portaudio.h"
 #include "mpi.h"

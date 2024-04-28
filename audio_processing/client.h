@@ -4,7 +4,8 @@
 #include "client_server.h"
 #include "portaudio.h"
 
-#include <curses.h>  // sudo apt-get install libncurses5-dev libncursesw5-dev
+#include <unistd.h>
+#include <termios.h>
 
 class Client : public ClientServer
 {
@@ -16,16 +17,18 @@ public:
 
 private:
     constexpr static int INITIAL_WRITE_PADDING{4};
-    constexpr static int SERVER_RANK{1};
 
     void parseArguments(int argc, char **argv) override;
     void startSendChunk() override;
     void startReceiveChunk() override;
-    void awaitSendChunk() override;
-    void awaitReceiveChunk() override;
+    bool awaitSendChunk() override;
+    bool awaitReceiveChunk() override;
+    bool keyNotPressed();
 
     PaStream *_stream{nullptr};
     PaSampleFormat _samplingDatatype{paFloat32};
+
+    timeval _terminalTimeout{tv_sec: 0, tv_usec: 0};
 };
 
 #endif

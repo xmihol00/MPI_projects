@@ -16,6 +16,28 @@ ClientServer::~ClientServer()
     {
         MPI_Comm_free(&_clientServerComm);
     }
+
+    if (_sendRequest != MPI_REQUEST_NULL)
+    {
+        MPI_Status status;
+        int flag;
+        MPI_Request_get_status(_sendRequest, &flag, &status);
+        if (!flag)
+        {
+            MPI_Cancel(&_sendRequest);
+        }
+    }
+
+    if (_receiveRequest != MPI_REQUEST_NULL)
+    {
+        MPI_Status status;
+        int flag;
+        MPI_Request_get_status(_receiveRequest, &flag, &status);
+        if (!flag)
+        {
+            MPI_Cancel(&_receiveRequest);
+        }
+    }
 }
 
 void ClientServer::parseArguments(int argc, char **argv)
@@ -75,7 +97,7 @@ void ClientServer::parseArguments(int argc, char **argv)
     };
     
 
-    for (; idx < arguments.size(); idx)
+    for (; idx < arguments.size(); idx++)
     {
         if (arguments[idx] == "-s")
         {

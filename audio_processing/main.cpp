@@ -1,5 +1,7 @@
 #include "mian.h"
 
+using namespace std;
+
 int main(int argc, char* argv[])
 {
     MPI_Init(&argc, &argv);
@@ -8,12 +10,14 @@ int main(int argc, char* argv[])
 
     if (worldRank == 0)
     {
+        cout << "Starting client" << endl;
         Client client(argc, argv);
         client.run();
     }
     else if (worldRank == 1)
     {
-        Server server(argc, argv);
+        cout << "Starting low pass server" << endl;
+        LowPassServer server(argc, argv);
         server.run();
     }
 
