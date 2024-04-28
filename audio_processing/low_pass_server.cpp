@@ -34,9 +34,10 @@ void LowPassServer::processChunk()
         _lastRightSample = _lastRightSample - (LOW_PASS_COEFFICIENT * (_lastRightSample - _currentInputBuffer.f32[i]));
         _lastLeftSample = _lastLeftSample - (LOW_PASS_COEFFICIENT * (_lastLeftSample - _currentInputBuffer.f32[i + 1]));
 
-        _currentOutputBuffer.f32[i] = _lastRightSample;
-        _currentOutputBuffer.f32[i + 1] = _lastLeftSample;
+        _currentOutputBuffer.f32[i] = _lastRightSample * 1.25f;
+        _currentOutputBuffer.f32[i + 1] = _lastLeftSample * 1.25f;
     }
 
-    usleep(10000);
+    uint32_t delay = _processingDelay + (rand() % _jitter) - _jitterShift;
+    usleep(delay);
 }

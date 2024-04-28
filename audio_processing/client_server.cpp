@@ -96,7 +96,6 @@ void ClientServer::parseArguments(int argc, char **argv)
         }
     };
     
-
     for (; idx < arguments.size(); idx++)
     {
         if (arguments[idx] == "-s")

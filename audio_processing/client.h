@@ -4,6 +4,7 @@
 #include "client_server.h"
 
 #include <portaudio.h>
+#include <sndfile.hh>
 #include <unistd.h>
 
 class Client : public ClientServer
@@ -15,7 +16,7 @@ public:
     void run() override;
 
 private:
-    constexpr static int INITIAL_WRITE_PADDING{4};
+    constexpr static int INITIAL_WRITE_PADDING{2};
 
     void parseArguments(int argc, char **argv) override;
     void startSendChunk() override;
@@ -27,7 +28,10 @@ private:
     PaStream *_stream{nullptr};
     PaSampleFormat _samplingDatatype{paFloat32};
 
-    timeval _terminalTimeout{tv_sec: 0, tv_usec: 0};
+    std::string _inputFileName;
+    std::string _outputFileName;
+    SndfileHandle _inputFile;
+    SndfileHandle _outputFile;
 };
 
 #endif

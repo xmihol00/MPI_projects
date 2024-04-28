@@ -4,6 +4,8 @@ using namespace std;
 
 Client::Client(int argc, char **argv) : ClientServer(argc, argv)
 {
+    parseArguments(argc, argv);
+
     switch (_samplingDatatype)
     {
         case paFloat32:
@@ -51,24 +53,56 @@ Client::Client(int argc, char **argv) : ClientServer(argc, argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    PaDeviceIndex inputDevice = Pa_GetDefaultInputDevice();
-    PaDeviceIndex outputDevice = Pa_GetDefaultOutputDevice();
-
+    PaStreamParameters *inputParametersPtr = nullptr;
+    PaStreamParameters *outputParametersPtr = nullptr;
     PaStreamParameters inputParameters;
-    inputParameters.device = inputDevice;
-    inputParameters.channelCount = _channels;
-    inputParameters.sampleFormat = _samplingDatatype;
-    inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultLowInputLatency;
-    inputParameters.hostApiSpecificStreamInfo = nullptr;
-
     PaStreamParameters outputParameters;
-    outputParameters.device = outputDevice;
-    outputParameters.channelCount = _channels;
-    outputParameters.sampleFormat = _samplingDatatype;
-    outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
-    outputParameters.hostApiSpecificStreamInfo = nullptr;
 
-    err = Pa_OpenStream(&_stream, &inputParameters, &outputParameters, _samplingRate, _samplesPerChunk, paClipOff, nullptr, nullptr);
+    if (_inputFileName.empty())
+    {
+        PaDeviceIndex inputDevice = Pa_GetDefaultInputDevice();
+
+        inputParameters.device = inputDevice;
+        inputParameters.channelCount = _channels;
+        inputParameters.sampleFormat = _samplingDatatype;
+        inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultLowInputLatency;
+        inputParameters.hostApiSpecificStreamInfo = nullptr;
+
+        inputParametersPtr = &inputParameters;
+    }
+    else
+    {
+        _inputFile = SndfileHandle(_inputFileName, SFM_READ, SF_FORMAT_WAV | SF_FORMAT_PCM_16, _channels, _samplingRate);
+        if (_inputFile.error())
+        {
+            cerr << "Error opening input file: " << _inputFileName << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+
+    if (_outputFileName.empty())
+    {
+        PaDeviceIndex outputDevice = Pa_GetDefaultOutputDevice();
+
+        outputParameters.device = outputDevice;
+        outputParameters.channelCount = _channels;
+        outputParameters.sampleFormat = _samplingDatatype;
+        outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
+        outputParameters.hostApiSpecificStreamInfo = nullptr;
+
+        outputParametersPtr = &outputParameters;
+    }
+    else
+    {
+        _outputFile = SndfileHandle(_outputFileName, SFM_WRITE, SF_FORMAT_WAV | SF_FORMAT_PCM_16, _channels, _samplingRate);
+        if (_outputFile.error())
+        {
+            cerr << "Error opening output file: " << _outputFileName << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
+    
+    err = Pa_OpenStream(&_stream, inputParametersPtr, outputParametersPtr, _samplingRate, _samplesPerChunk, paClipOff, nullptr, nullptr);
     if (err != paNoError)
     {
         cerr << "PortAudio opening stream error: " << Pa_GetErrorText(err) << endl;
@@ -124,8 +158,6 @@ Client::~Client()
 
 void Client::parseArguments(int argc, char **argv)
 {
-    ClientServer::parseArguments(argc, argv);
-
     // convert arguments to a vector of strings
     vector<string> arguments(argv, argv + argc);
     size_t idx = 1;
@@ -144,7 +176,7 @@ void Client::parseArguments(int argc, char **argv)
 
     for (; idx < arguments.size(); idx++)
     {
-        if (arguments[idx] == "-d")
+        if (arguments[idx] == "-t")
         {
             checkNextArgument();
             if (arguments[idx] == "f32")
@@ -176,6 +208,16 @@ void Client::parseArguments(int argc, char **argv)
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
         }
+        else if (arguments[idx] == "-i")
+        {
+            checkNextArgument();
+            _inputFileName = arguments[idx];
+        }
+        else if (arguments[idx] == "-o")
+        {
+            checkNextArgument();
+            _outputFileName = arguments[idx];
+        }
     }
 }
 
@@ -184,7 +226,8 @@ bool Client::enterNotPressed()
     fd_set fdSet;
     FD_ZERO(&fdSet);
     FD_SET(STDIN_FILENO, &fdSet);
-    return select(1, &fdSet, nullptr, nullptr, &_terminalTimeout) == 0;
+    timeval timeout{tv_sec: 0, tv_usec: 0};
+    return select(1, &fdSet, nullptr, nullptr, &timeout) == 0;
 }
 
 void Client::startSendChunk()
@@ -211,35 +254,77 @@ bool Client::awaitReceiveChunk()
 
 void Client::run()
 {
-    PaError err = Pa_StartStream(_stream);
-    if (err != paNoError)
+    if (_inputFileName.empty() || _outputFileName.empty())
     {
-        cerr << "PortAudio starting stream error: " << Pa_GetErrorText(err) << endl;
-        MPI_Abort(MPI_COMM_WORLD, 1);
+        PaError err = Pa_StartStream(_stream);
+        if (err != paNoError)
+        {
+            cerr << "PortAudio starting stream error: " << Pa_GetErrorText(err) << endl;
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
     }
 
-    for (int i = 0; i < INITIAL_WRITE_PADDING; i++)
+    if (_inputFileName.empty() && _outputFileName.empty())
     {
-        Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
-    }
+        for (int i = 0; i < INITIAL_WRITE_PADDING * 2; i++)
+        {
+            Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
+        }
 
-    cout << "Press enter to stop the audio processing..." << endl;
-    startSendChunk();
-    while (enterNotPressed())
-    {
-        startReceiveChunk();
-
-        awaitSendChunk();
-        swap(_currentOutputBuffer.any, _nextOutputBuffer.any);
-        Pa_ReadStream(_stream, _currentInputBuffer.any, _samplesPerChunk);
+        cout << "Press Enter to stop the audio processing..." << endl;
         startSendChunk();
+        awaitSendChunk();
+        startSendChunk();
+        startReceiveChunk();
+        do
+        {
+            Pa_ReadStream(_stream, _nextInputBuffer.any, _samplesPerChunk);
+            awaitSendChunk();
+            swap(_currentInputBuffer.any, _nextInputBuffer.any);
+            startSendChunk();
 
+            awaitReceiveChunk();
+            swap(_currentOutputBuffer.any, _nextOutputBuffer.any);
+            startReceiveChunk();
+            Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
+        }
+        while (enterNotPressed());
+        awaitSendChunk();
+        startReceiveChunk();
         awaitReceiveChunk();
-        swap(_currentInputBuffer.any, _nextInputBuffer.any);
-        Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
+        MPI_Send(_currentInputBuffer.any, 1, MPI_BYTE, SERVER_RANK, TERMINATING_TAG, _clientServerComm);
+        cout << "Audio processing stopped." << endl;
     }
-    startReceiveChunk();
-    MPI_Send(_currentInputBuffer.any, 1, MPI_BYTE, SERVER_RANK, TERMINATING_TAG, _clientServerComm);
+    else if (_outputFileName.empty())
+    {
+        sf_count_t samplesRead = 0;
+        for (int i = 0; i < INITIAL_WRITE_PADDING; i++)
+        {
+            Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
+        }
 
-    cout << "Audio processing stopped." << endl;
+        cout << "Replaying audio file: " << _inputFileName << " press Enter to stop." << endl;
+        startSendChunk();
+        awaitSendChunk();
+        startSendChunk();
+        startReceiveChunk();
+        do
+        {
+            samplesRead = _inputFile.readf(_currentInputBuffer.f32, _samplesPerChunk);
+            awaitSendChunk();
+            swap(_currentInputBuffer.f32, _nextInputBuffer.f32);
+            startSendChunk();
+
+            awaitReceiveChunk();
+            swap(_currentOutputBuffer.any, _nextOutputBuffer.any);
+            startReceiveChunk();    
+            Pa_WriteStream(_stream, _currentOutputBuffer.any, _samplesPerChunk);
+        }
+        while (samplesRead && enterNotPressed());
+        awaitSendChunk();
+        startReceiveChunk();
+        awaitReceiveChunk();
+        MPI_Send(_currentInputBuffer.any, 1, MPI_BYTE, SERVER_RANK, TERMINATING_TAG, _clientServerComm);
+        cout << "Audio file replayed." << endl;
+    }
 }
