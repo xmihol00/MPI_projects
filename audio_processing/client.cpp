@@ -4,6 +4,46 @@ using namespace std;
 
 Client::Client(int argc, char **argv) : ClientServer(argc, argv)
 {
+    switch (_samplingDatatype)
+    {
+        case paFloat32:
+            _currentInputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+            _currentOutputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+            _nextInputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+            _nextOutputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+            break;
+
+        case paInt32:
+            _currentInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels]();
+            _currentOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels]();
+            _nextInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels]();
+            _nextOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels]();
+            break;
+
+        case paInt16:
+            _currentInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels]();
+            _currentOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels]();
+            _nextInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels]();
+            _nextOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels]();
+            break;
+
+        case paInt8:
+            _currentInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels]();
+            _currentOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels]();
+            _nextInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels]();
+            _nextOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels]();
+            break;
+
+        case paUInt8:
+            _currentInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels]();
+            _currentOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels]();
+            _nextInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels]();
+            _nextOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels]();
+            break;
+    }
+
+    _bufferByteSize = _samplesPerChunk * _channels * Pa_GetSampleSize(_samplingDatatype);
+
     PaError err = Pa_Initialize();
     if (err != paNoError)
     {
@@ -34,50 +74,13 @@ Client::Client(int argc, char **argv) : ClientServer(argc, argv)
         cerr << "PortAudio opening stream error: " << Pa_GetErrorText(err) << endl;
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
-
-    switch (_samplingDatatype)
-    {
-        case paFloat32:
-            _currentInputBuffer.f32 = new float[_samplesPerChunk * _channels];
-            _currentOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
-            _nextInputBuffer.f32 = new float[_samplesPerChunk * _channels];
-            _nextOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
-            break;
-
-        case paInt32:
-            _currentInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
-            _currentOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
-            _nextInputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
-            _nextOutputBuffer.i32 = new int32_t[_samplesPerChunk * _channels];
-            break;
-
-        case paInt16:
-            _currentInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
-            _currentOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
-            _nextInputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
-            _nextOutputBuffer.i16 = new int16_t[_samplesPerChunk * _channels];
-            break;
-
-        case paInt8:
-            _currentInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
-            _currentOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
-            _nextInputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
-            _nextOutputBuffer.i8 = new int8_t[_samplesPerChunk * _channels];
-            break;
-
-        case paUInt8:
-            _currentInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
-            _currentOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
-            _nextInputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
-            _nextOutputBuffer.u8 = new uint8_t[_samplesPerChunk * _channels];
-            break;
-    }
-
-    _bufferByteSize = _samplesPerChunk * _channels * Pa_GetSampleSize(_samplingDatatype);
 }
 
 Client::~Client()
 {
+    Pa_CloseStream(_stream);
+    Pa_Terminate();
+
     switch (_samplingDatatype)
     {
         case paFloat32:
@@ -116,9 +119,6 @@ Client::~Client()
             break;
     }
 
-    Pa_CloseStream(_stream);
-    Pa_Terminate();
-
     ClientServer::~ClientServer();
 }
 
@@ -128,7 +128,7 @@ void Client::parseArguments(int argc, char **argv)
 
     // convert arguments to a vector of strings
     vector<string> arguments(argv, argv + argc);
-    size_t idx = 0;
+    size_t idx = 1;
 
     // lambda function for parsing an integer argument
     auto checkNextArgument = [&]()
@@ -179,7 +179,7 @@ void Client::parseArguments(int argc, char **argv)
     }
 }
 
-bool Client::keyNotPressed()
+bool Client::enterNotPressed()
 {   
     fd_set fdSet;
     FD_ZERO(&fdSet);
@@ -225,7 +225,7 @@ void Client::run()
 
     cout << "Press enter to stop the audio processing..." << endl;
     startSendChunk();
-    while (keyNotPressed())
+    while (enterNotPressed())
     {
         startReceiveChunk();
 

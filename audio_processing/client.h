@@ -2,10 +2,9 @@
 #define _CLIENT_H_
 
 #include "client_server.h"
-#include "portaudio.h"
 
+#include <portaudio.h>
 #include <unistd.h>
-#include <termios.h>
 
 class Client : public ClientServer
 {
@@ -23,7 +22,7 @@ private:
     void startReceiveChunk() override;
     bool awaitSendChunk() override;
     bool awaitReceiveChunk() override;
-    bool keyNotPressed();
+    bool enterNotPressed();
 
     PaStream *_stream{nullptr};
     PaSampleFormat _samplingDatatype{paFloat32};

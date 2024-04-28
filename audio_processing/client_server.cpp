@@ -44,7 +44,7 @@ void ClientServer::parseArguments(int argc, char **argv)
 {
     // convert arguments to a vector of strings
     vector<string> arguments(argv, argv + argc);
-    size_t idx = 0;
+    size_t idx = 1;
 
     // lambda function for parsing an integer argument
     auto parseInt = [&]() -> int
@@ -106,14 +106,17 @@ void ClientServer::parseArguments(int argc, char **argv)
         }
         else if (arguments[idx] == "-n")
         {
+            checkNextArgument();
             _samplesPerChunk = parseInt();
         }
         else if (arguments[idx] == "-m")
         {
+            checkNextArgument();
             _millisecondsPerChunk = parseInt();
         }
         else if (arguments[idx] == "-c")
         {
+            checkNextArgument();
             _channels = parseInt();
         }
     }

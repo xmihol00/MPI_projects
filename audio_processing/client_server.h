@@ -1,7 +1,8 @@
 #ifndef _CLIENT_SERVER_H_
 #define _CLIENT_SERVER_H_
 
-#include "mpi.h"
+#include <mpi.h>
+#include <sndfile.hh>
 #include <vector>
 #include <string>
 #include <iostream>
@@ -48,7 +49,7 @@ protected:
     Buffer _nextOutputBuffer;
     int _bufferByteSize{0};
 
-    uint32_t _samplingRate{44100};
+    uint32_t _samplingRate{22050};
     uint32_t _samplesPerChunk{_samplingRate / 10};
     uint32_t _millisecondsPerChunk{0};
     uint32_t _channels{2};

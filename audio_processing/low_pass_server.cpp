@@ -10,10 +10,10 @@ LowPassServer::LowPassServer(int argc, char **argv) : Server(argc, argv)
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    _currentInputBuffer.f32 = new float[_samplesPerChunk * _channels];
-    _currentOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
-    _nextInputBuffer.f32 = new float[_samplesPerChunk * _channels];
-    _nextOutputBuffer.f32 = new float[_samplesPerChunk * _channels];
+    _currentInputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+    _currentOutputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+    _nextInputBuffer.f32 = new float[_samplesPerChunk * _channels]();
+    _nextOutputBuffer.f32 = new float[_samplesPerChunk * _channels]();
     _bufferByteSize = _samplesPerChunk * _channels * sizeof(float);
 }
 
@@ -36,5 +36,7 @@ void LowPassServer::processChunk()
 
         _currentOutputBuffer.f32[i] = _lastRightSample;
         _currentOutputBuffer.f32[i + 1] = _lastLeftSample;
-    }   
+    }
+
+    usleep(10000);
 }

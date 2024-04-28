@@ -3,6 +3,8 @@
 
 #include "server.h"
 
+#include <unistd.h>
+
 class LowPassServer : public Server
 {
 public:
