@@ -36,7 +36,7 @@ int main(int argc, char **argv)
     PaStreamParameters inputParameters;
     inputParameters.device = inputDevice;
     inputParameters.channelCount = NUM_CHANNELS;
-    inputParameters.sampleFormat = paFloat32;
+    inputParameters.sampleFormat = paFloat3232;
     inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultLowInputLatency;
     inputParameters.hostApiSpecificStreamInfo = nullptr;
 

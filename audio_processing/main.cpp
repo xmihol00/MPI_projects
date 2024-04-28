@@ -10,13 +10,11 @@ int main(int argc, char* argv[])
 
     if (worldRank == 0)
     {
-        cout << "Starting client" << endl;
         Client client(argc, argv);
         client.run();
     }
     else if (worldRank == 1)
     {
-        cout << "Starting low pass server" << endl;
         LowPassServer server(argc, argv);
         server.run();
     }

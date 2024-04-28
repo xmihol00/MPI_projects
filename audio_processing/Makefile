@@ -3,7 +3,7 @@ CURRENT_DIR = $(shell pwd)
 PROJECT_DIR = $(MAKEFILE_DIR:$(CURRENT_DIR)/%=%)
 
 CC = mpic++
-CFLAGS = -Wall -Wextra -std=c++20 -O3 -Wno-cast-function-type -lrt -lm -lasound -pthread -lsndfile
+CFLAGS = -Wall -Wextra -std=c++20 -O3 -Wno-cast-function-type -fopenmp -lrt -lm -lasound -pthread -lsndfile
 CPP_SRC = $(wildcard $(PROJECT_DIR)/*.cpp)
 CPP_SRC_LIBS = $(CPP_SRC) /usr/local/lib/libportaudio.a 
 

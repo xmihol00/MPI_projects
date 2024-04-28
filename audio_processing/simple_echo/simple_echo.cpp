@@ -30,14 +30,14 @@ int main()
         PaStreamParameters inputParameters;
         inputParameters.device = inputDevice;
         inputParameters.channelCount = NUM_CHANNELS;
-        inputParameters.sampleFormat = paFloat32;
+        inputParameters.sampleFormat = paFloat3232;
         inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultLowInputLatency;
         inputParameters.hostApiSpecificStreamInfo = nullptr;
 
         PaStreamParameters outputParameters;
         outputParameters.device = outputDevice;
         outputParameters.channelCount = NUM_CHANNELS;
-        outputParameters.sampleFormat = paFloat32;
+        outputParameters.sampleFormat = paFloat3232;
         outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
 

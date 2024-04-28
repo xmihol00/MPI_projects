@@ -98,22 +98,22 @@ void ClientServer::parseArguments(int argc, char **argv)
     
     for (; idx < arguments.size(); idx++)
     {
-        if (arguments[idx] == "-s")
+        if (arguments[idx] == "-s")      // sampling rate
         {
             checkNextArgument();
             _samplingRate = parseInt();
         }
-        else if (arguments[idx] == "-n")
+        else if (arguments[idx] == "-n") // samples per chunk
         {
             checkNextArgument();
             _samplesPerChunk = parseInt();
         }
-        else if (arguments[idx] == "-m")
+        else if (arguments[idx] == "-m") // milliseconds per chunk
         {
             checkNextArgument();
             _millisecondsPerChunk = parseInt();
         }
-        else if (arguments[idx] == "-c")
+        else if (arguments[idx] == "-c") // number of channels
         {
             checkNextArgument();
             _channels = parseInt();

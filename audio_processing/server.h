@@ -10,21 +10,41 @@ public:
     Server(int argc, char **argv);
     ~Server();
 
+    /**
+     * @brief Runs the server side computation.
+     */
     void run() override;
 
 protected:
+    /**
+     * @brief Processes a chunk of audio data. The functions is pure virtual and must be implemented by derived classes.
+     */
     virtual void processChunk() = 0;
-    void parseArguments(int argc, char **argv) override;
-
-    uint32_t _processingDelay{0};
-    uint32_t _jitter{1};
-    uint32_t _jitterShift{0};
 
 private:
-    void startSendChunk() override;
-    void startReceiveChunk() override;
-    bool awaitSendChunk() override;
-    bool awaitReceiveChunk() override;
+    /**
+     * @brief Starts sending a chunk of audio data to the client.
+     */
+    void startSendChunk();
+
+    /**
+     * @brief Starts receiving a chunk of audio data from the client.
+     */
+    void startReceiveChunk();
+
+    /**
+     * @brief Waits for the chunk of audio data to be sent to the client.
+     * 
+     * @return True if the chunk was sent successfully, false otherwise.
+     */
+    bool awaitSendChunk();
+
+    /**
+     * @brief Waits for the chunk of audio data to be received from the client.
+     * 
+     * @return True if the chunk was received successfully, false if it was the last chunk or a failure occurred.
+     */
+    bool awaitReceiveChunk();
 };
 
 #endif

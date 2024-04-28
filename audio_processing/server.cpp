@@ -12,76 +12,14 @@ Server::~Server()
     ClientServer::~ClientServer();
 }
 
-void Server::parseArguments(int argc, char **argv)
-{
-    // convert arguments to a vector of strings
-    vector<string> arguments(argv, argv + argc);
-    size_t idx = 1;
-
-    // lambda function for parsing an integer argument
-    auto parseInt = [&]() -> int
-    {
-        int value = 0;
-        try
-        {
-            value = stoi(arguments[idx]);
-        }
-        catch (const invalid_argument& e)
-        {
-            cerr << "Invalid argument for the '" << arguments[idx - 1] << "' switch." << endl;   
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        catch (const out_of_range& e)
-        {
-            cerr << "Argument for the '" << arguments[idx - 1] << "' switch is out of range." << endl;
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        if (value < 0)
-        {
-            cerr << "Argument for the '" << arguments[idx - 1] << "' switch must be a non-negative number." << endl;
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-
-        return value;
-    };
-
-    auto checkNextArgument = [&]()
-    {
-        idx++;
-        if (idx == arguments.size())
-        {
-            cerr << "No argument provided for the '" << arguments[idx - 1] << "' switch." << endl;
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-    };
-
-    for (; idx < arguments.size(); idx++)
-    {
-        if (arguments[idx] == "-d")
-        {
-            checkNextArgument();
-            _processingDelay = parseInt();
-            _processingDelay *= 1000;
-        }
-        else if (arguments[idx] == "-j")
-        {
-            checkNextArgument();
-            _jitter = parseInt();
-            _jitter *= 1000;
-            _jitterShift = _jitter / 2;
-        }
-    }
-}
-
 void Server::startSendChunk()
 {
-    MPI_Isend(_currentOutputBuffer.any, _bufferByteSize, MPI_BYTE, CLIENT_RANK, VALID_TAG, _clientServerComm, &_sendRequest);
+    MPI_Isend(_currentOutputBuffer, _bufferByteSize, MPI_BYTE, CLIENT_RANK, VALID_TAG, _clientServerComm, &_sendRequest);
 }
 
 void Server::startReceiveChunk()
 {
-    MPI_Irecv(_nextInputBuffer.any, _bufferByteSize, MPI_BYTE, CLIENT_RANK, MPI_ANY_TAG, _clientServerComm, &_receiveRequest);
+    MPI_Irecv(_nextInputBuffer, _bufferByteSize, MPI_BYTE, CLIENT_RANK, MPI_ANY_TAG, _clientServerComm, &_receiveRequest);
 }
 
 bool Server::awaitSendChunk()
@@ -100,17 +38,19 @@ bool Server::awaitReceiveChunk()
 
 void Server::run()
 {
+    // initiate receiving and sending, the first sent chunk will be always empty
     startReceiveChunk();
     startSendChunk();
-    while (awaitReceiveChunk())
+
+    while (awaitReceiveChunk()) // wait for new chunk to arrive
     {   
-        swap(_currentInputBuffer.any, _nextInputBuffer.any);
-        startReceiveChunk();
+        swap(_currentInputBuffer, _nextInputBuffer);
+        startReceiveChunk(); // start receiving the next chunk immediately to mask the processing delay
 
         processChunk();
 
-        awaitSendChunk();
-        swap(_currentOutputBuffer.any, _nextOutputBuffer.any);
-        startSendChunk();
+        awaitSendChunk(); // wait for the previous chunk to finish
+        swap(_currentOutputBuffer, _nextOutputBuffer);
+        startSendChunk(); // start sending the newly processed chunk
     }
 }
