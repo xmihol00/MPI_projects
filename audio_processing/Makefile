@@ -19,4 +19,4 @@ clean:
 	rm -f $(TARGET) $(PACK_TARGET)
 
 pack: clean
-	zip -r $(PACK_TARGET) ./src ./Makefile ./README.md ./mpi_echo ./recorder ./processed_files/ ./run_simulations.sh ./test_recording.wav ./report.pdf -x "processed_files/*wav"
+	zip -r $(PACK_TARGET) ./* -x "processed_files/*wav"
