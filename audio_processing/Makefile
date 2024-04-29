@@ -8,11 +8,15 @@ CPP_SRC = $(wildcard $(PROJECT_DIR)/src/*.cpp)
 CPP_SRC_LIBS = $(CPP_SRC) /usr/local/lib/libportaudio.a 
 
 TARGET = $(PROJECT_DIR)/rtap
+PACK_TARGET = $(PROJECT_DIR)/RTSa-project-outcome-xmihol00.zip
 
-.PHONY: all test debug clean
+.PHONY: all clean pack
 
 all:
 	$(CC) $(CPP_SRC_LIBS) $(CFLAGS) -o $(TARGET)
 
 clean: 
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(PACK_TARGET)
+
+pack: clean
+	zip -r $(PACK_TARGET) ./src ./Makefile ./README.md ./mpi_echo ./recorder ./processed_files/ ./run_simulations.sh ./test_recording.wav ./report.pdf -x "processed_files/*wav"
