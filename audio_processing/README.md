@@ -9,6 +9,7 @@ Framework for real time audio processing and simulation.
 ├── src/                    - source files of the framework
 ├── Makefile                - file for building the framework with GNU Make
 ├── README.md               - this file
+├── report.pdf              - PDF documentation of the project
 ├── run_simulations.sh      - script for running the simulation of real time audio processing
 └── test_recording.wav      - test audio recording used for simulation and testing
 ```
