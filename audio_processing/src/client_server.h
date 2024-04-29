@@ -19,11 +19,11 @@ public:
     virtual void run() = 0;
 
 protected:
-    constexpr static int CLIENT_RANK{0};        ///< MPI rank (identifier) of the client process.
-    constexpr static int SERVER_RANK{1};        ///< MPI rank (identifier) of the server process.
-    constexpr static int ROOT{CLIENT_RANK};     ///< MPI rank of the root process.
-    constexpr static int VALID_TAG{0};          ///< Tag used to indicate that the received chunk is valid.
-    constexpr static int TERMINATING_TAG{1};    ///< Tag used to indicate that the received chunk is the last one.
+    constexpr static int CLIENT_RANK{0};            ///< MPI rank (identifier) of the client process.
+    constexpr static int SERVER_RANK{1};            ///< MPI rank (identifier) of the server process.
+    constexpr static int ROOT{CLIENT_RANK};         ///< MPI rank of the root process.
+    constexpr static int VALID_TAG{0};              ///< Tag used to indicate that the received chunk is valid.
+    constexpr static int TERMINATING_TAG{1};        ///< Tag used to indicate that the received chunk is the last one.
 
     /**
      * @brief Parses the command line arguments.
@@ -47,7 +47,7 @@ protected:
     int _bufferByteSize{0};                         ///< Size of the input and output buffers in bytes.
 
     uint32_t _samplingRate{22050};                  ///< Default sampling rate of the audio data.
-    uint32_t _samplesPerChunk{_samplingRate / 30};  ///< Default number of samples per chunk.
+    uint32_t _samplesPerChunk{735};                 ///< Default number of samples per chunk (window size).
     uint32_t _millisecondsPerChunk{0};              ///< Number of milliseconds per chunk, 0 means use '_samplesPerChunk'.
     uint32_t _channels{2};                          ///< Default number of channels of the audio data.
 };

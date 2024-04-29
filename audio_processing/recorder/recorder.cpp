@@ -1,4 +1,4 @@
-// g++ recorder.cpp /usr/local/lib/libportaudio.a -lsndfile -lrt -lm -lasound -pthread -O3 -std=c++20 -o record
+// g++ recorder.cpp /usr/local/lib/libportaudio.a -lsndfile -lrt -lm -lasound -pthread -O3 -std=c++17 -o record
 
 #include <portaudio.h>
 #include <sndfile.hh>

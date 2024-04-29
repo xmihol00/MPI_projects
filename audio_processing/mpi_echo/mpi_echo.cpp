@@ -1,4 +1,4 @@
-// mpic++ simple_echo.cpp /usr/local/lib/libportaudio.a -lrt -lm -lasound -pthread -O3 -std=c++17 -o simple_echo
+// mpic++ mpi_echo.cpp /usr/local/lib/libportaudio.a -lrt -lm -lasound -pthread -O3 -std=c++17 -o echo
 
 #include "portaudio.h"
 #include "mpi.h"
@@ -9,6 +9,7 @@
 #define NUM_CHANNELS 2
 #define NUM_SECONDS 4
 #define NUM_SAMPLES 512
+#define ITERATIONS 10000
 
 int main()
 {
@@ -16,8 +17,8 @@ int main()
     int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    float inputBuffer[NUM_SAMPLES * 2 + 100] = {0, };
-    float outputBuffer[NUM_SAMPLES * 2 + 100] = {0, };
+    float inputBuffer[NUM_SAMPLES * NUM_CHANNELS] = {0, };
+    float outputBuffer[NUM_SAMPLES * NUM_CHANNELS] = {0, };
 
     if (rank == 0)
     {
@@ -30,14 +31,14 @@ int main()
         PaStreamParameters inputParameters;
         inputParameters.device = inputDevice;
         inputParameters.channelCount = NUM_CHANNELS;
-        inputParameters.sampleFormat = paFloat3232;
+        inputParameters.sampleFormat = paFloat32;
         inputParameters.suggestedLatency = Pa_GetDeviceInfo(inputParameters.device)->defaultLowInputLatency;
         inputParameters.hostApiSpecificStreamInfo = nullptr;
 
         PaStreamParameters outputParameters;
         outputParameters.device = outputDevice;
         outputParameters.channelCount = NUM_CHANNELS;
-        outputParameters.sampleFormat = paFloat3232;
+        outputParameters.sampleFormat = paFloat32;
         outputParameters.suggestedLatency = Pa_GetDeviceInfo(outputParameters.device)->defaultLowOutputLatency;
         outputParameters.hostApiSpecificStreamInfo = nullptr;
 
@@ -62,7 +63,7 @@ int main()
             Pa_WriteStream(stream, outputBuffer, NUM_SAMPLES);
         }
 
-        for (int i = 0; i < 5000; i++)
+        for (int i = 0; i < ITERATIONS; i++)
         {
             Pa_ReadStream(stream, inputBuffer, NUM_SAMPLES);
             MPI_Send(inputBuffer, NUM_SAMPLES * 2, MPI_FLOAT, 1, 0, MPI_COMM_WORLD);
@@ -76,25 +77,14 @@ int main()
     }
     else if (rank == 1)
     {
-        float lastRight = 0;
-        float lastLeft = 0;
-        float beta = 0.04;
-        for (int i = 0; i < 5000; i++)
+        for (int i = 0; i < ITERATIONS; i++)
         {
             MPI_Recv(inputBuffer, NUM_SAMPLES * 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
             for (int j = 0; j < NUM_SAMPLES * 2; j += 2)
             {
-            
-            #if 1
-                lastRight = lastRight - (beta * (lastRight - inputBuffer[j]));
-                lastLeft = lastLeft - (beta * (lastLeft - inputBuffer[j + 1]));
-                outputBuffer[j] = lastRight;
-                outputBuffer[j + 1] = lastLeft;
-            #else
                 outputBuffer[j] = inputBuffer[j];
                 outputBuffer[j + 1] = inputBuffer[j + 1];
-            #endif
             }
 
             MPI_Send(outputBuffer, NUM_SAMPLES * 2, MPI_FLOAT, 0, 0, MPI_COMM_WORLD);

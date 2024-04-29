@@ -85,6 +85,11 @@ void LowPassServer::parseArguments(int argc, char **argv)
             _jitter++;  // ensure jitter is never zero to avoid division by zero
             _jitterShift = _jitter / 2;
         }
+        else if (arguments[idx] == "-h") // help
+        {
+            MPI_Finalize();
+            exit(0);
+        }
     }
 }
 

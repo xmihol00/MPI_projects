@@ -1,4 +1,4 @@
-#include "mian.h"
+#include "main.h"
 
 using namespace std;
 
@@ -19,7 +19,6 @@ int main(int argc, char* argv[])
         server.run();
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
     return 0;
 }

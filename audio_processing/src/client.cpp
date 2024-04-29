@@ -183,6 +183,11 @@ void Client::parseArguments(int argc, char **argv)
         {
             _noSimulation = true;
         }
+        else if (arguments[idx] == "-h") // help
+        {
+            MPI_Finalize();
+            exit(0);
+        }
     }
 }
 

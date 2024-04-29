@@ -54,3 +54,4 @@ rtap
 simple_echo
 !simple_echo/
 record
+echo
