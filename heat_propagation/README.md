@@ -1,16 +1,2 @@
-## Project to PPP course
-
-### Fle structure
-    3rdparty           - Third party libraries
-    doc                - Source files for student assignment docummentation
-    eval_scripts       - Evaluation scripts 
-    scripts            - Test scripts for students (*.sh, *.py, *.flt)
-    sources            - Project source files
-
-### Assignment package preparation
-Following command will generate package that can be published as assignment for students. The `assignment.zip` file will
-be placed in `build` directory.
-
-    $ cd sources_solution
-    $ mkdir build && cmake ..
-    $ make assignment
+# Heat Propagation Simulation
+Heat propagation simulation project implemented within the Practical Parallel Programming course at FIT, BUT. See the `assignment.pdf` and `report.pdf` files for more information.

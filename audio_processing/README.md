@@ -1,5 +1,5 @@
 # Real Time Audio Processing
-Framework for real time audio processing and simulation.
+Framework for real time audio processing and simulation implemented to the Real-Time Systems course at FIT, BUT.
 
 ## Directory Structure
 ```

@@ -6,6 +6,7 @@ ifndef N
 N=16
 endif
 
+# compile and execute each example with 'make <example shortcut>'
 rcs:
 	$(CC) -o row_comm_split row_comm_split.cpp
 	mpirun -np $N --oversubscribe ./row_comm_split

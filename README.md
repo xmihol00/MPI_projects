@@ -1,5 +1,12 @@
 # MPI Projects
-Projects leveraging the MPI library developed within Practical Parallel Programming and Parallel and Distributed Algorithms courses at BUT, FIT
+Several projects utilizing the MPI library for inter process communication.
 
-## Disclaimer
-Most of the work cannot be yet shared publicly.
+## Repository Structure
+```
+├── audio_processing       - framework for real time audio processing
+├── examples               - examples of the MPI library usage
+├── heat_propagation       - heat propagation simulation
+├── life                   - John Conway's Game of Life simulation
+└── pipeline_merge_sort    - parallel sorting algorithm
+```
+See `README.md` files in the respective directories for more information.
